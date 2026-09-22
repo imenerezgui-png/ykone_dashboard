@@ -5,6 +5,7 @@ Monochrome typewriter theme (black / white / grey shadows).
 
 from __future__ import annotations
 
+import calendar
 import io
 import json
 import uuid
@@ -368,6 +369,102 @@ label p {{
     height: 42px;
     filter: invert(1) grayscale(1);
 }}
+
+/* ── calendar ───────────────────────────────────────────────────── */
+.cal-wrap {{
+    border: 1px solid {LINE};
+    background: {CARD};
+    box-shadow: {SHADOW};
+    padding: 1rem 1.1rem 1.2rem;
+    margin: 0.4rem 0 1.4rem;
+}}
+.cal-head {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.9rem;
+}}
+.cal-head .cal-title {{
+    font-family: 'Courier Prime', monospace;
+    font-size: 1.1rem;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: {INK};
+}}
+.cal-grid {{
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+}}
+.cal-dow {{
+    font-family: 'DM Mono', monospace;
+    font-size: 0.62rem;
+    color: {DIM};
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    padding: 0.35rem 0.5rem;
+    border-bottom: 1px solid {LINE};
+    text-align: left;
+}}
+.cal-cell {{
+    min-height: 88px;
+    padding: 0.4rem 0.5rem 0.5rem;
+    background: {SURFACE};
+    border: 1px solid {LINE_SOFT};
+    box-shadow: 2px 2px 0 rgba(255,255,255,0.02);
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}}
+.cal-cell.empty {{ background: transparent; border-color: transparent; box-shadow: none; }}
+.cal-cell.today {{ border: 1px solid {INK}; box-shadow: 3px 3px 0 rgba(255,255,255,0.08); }}
+.cal-cell .cal-day {{
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    color: {DIM};
+    letter-spacing: 1px;
+}}
+.cal-cell.today .cal-day {{ color: {INK}; font-weight: 700; }}
+.cal-events {{ display: flex; flex-direction: column; gap: 3px; }}
+.cal-chip {{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.62rem;
+    color: {INK_SOFT};
+    letter-spacing: 0.5px;
+    line-height: 1.1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}}
+.cal-chip .cal-dot {{
+    display: inline-block;
+    width: 8px; height: 8px;
+    flex: 0 0 8px;
+}}
+.cal-dot.brief    {{ background: transparent; border: 1px solid {INK}; }}
+.cal-dot.debrief  {{ background: {DIM}; }}
+.cal-dot.pit      {{ background: {INK}; transform: rotate(45deg); }}
+.cal-dot.deadline {{ background: {INK}; height: 2px; width: 12px; flex-basis: 12px; }}
+.cal-dot.prez     {{ background: transparent; border: 1px dashed {INK_SOFT}; }}
+.cal-more {{
+    font-family: 'DM Mono', monospace;
+    font-size: 0.6rem;
+    color: {DIM};
+    letter-spacing: 0.5px;
+}}
+.cal-legend {{
+    display: flex; flex-wrap: wrap; gap: 1.1rem;
+    padding: 0.7rem 0 0.2rem;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.66rem;
+    color: {DIM};
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+}}
+.cal-legend .cal-chip {{ font-size: 0.66rem; color: {DIM}; }}
 
 /* ── hide Streamlit chrome ───────────────────────────────────────── */
 #MainMenu, footer, header {{ visibility: hidden; }}
@@ -1099,6 +1196,107 @@ with tab_viz:
     if len(df) == 0:
         st.info("No data yet. Add jobs in the Planning Board tab.")
         st.stop()
+
+    # ── Calendar view ───────────────────────────────────────────────────────
+    def _collect_events(frame: pd.DataFrame) -> dict[date, list[dict]]:
+        buckets: dict[date, list[dict]] = {}
+        field_map = [
+            ("BRIEFING CRA", "brief",    "BRIEF"),
+            ("PIT STOP",     "pit",      "PIT"),
+            ("DEADLINE",     "deadline", "DEADLINE"),
+            ("PREZ CLIENT",  "prez",     "PREZ"),
+        ]
+        for _, row in frame.iterrows():
+            label = f"{row.get('CLIENT', '?')} · {row.get('JOB', '?')}"
+            for col, kind, tag in field_map:
+                v = row.get(col)
+                if v and str(v) not in ("", "nan", "None", "NaT"):
+                    try:
+                        d = datetime.strptime(str(v)[:10], "%Y-%m-%d").date()
+                        buckets.setdefault(d, []).append({"kind": kind, "tag": tag, "label": label})
+                    except ValueError:
+                        pass
+            for db in _parse_debriefs(row.get("DEBRIEF")):
+                try:
+                    d = datetime.strptime(db[:10], "%Y-%m-%d").date()
+                    buckets.setdefault(d, []).append({"kind": "debrief", "tag": "DEBRIEF", "label": label})
+                except ValueError:
+                    pass
+        return buckets
+
+    events = _collect_events(df)
+
+    st.markdown('<div class="section-title">Calendar</div>', unsafe_allow_html=True)
+
+    cal_key = "cal_anchor"
+    if cal_key not in st.session_state:
+        st.session_state[cal_key] = date.today().replace(day=1)
+    anchor: date = st.session_state[cal_key]
+
+    nav_prev, nav_lbl, nav_next, nav_today = st.columns([1, 5, 1, 1])
+    if nav_prev.button("‹", key="cal_prev", use_container_width=True):
+        prev_month = anchor.month - 1 or 12
+        prev_year  = anchor.year - 1 if anchor.month == 1 else anchor.year
+        st.session_state[cal_key] = date(prev_year, prev_month, 1)
+        st.rerun()
+    nav_lbl.markdown(
+        f'<div style="text-align:center;font-family:\'Courier Prime\',monospace;'
+        f'font-size:1.1rem;letter-spacing:5px;text-transform:uppercase;'
+        f'color:{INK};padding-top:0.35rem;">'
+        f'{anchor.strftime("%B %Y").upper()}</div>',
+        unsafe_allow_html=True,
+    )
+    if nav_next.button("›", key="cal_next", use_container_width=True):
+        next_month = anchor.month + 1 if anchor.month < 12 else 1
+        next_year  = anchor.year + 1 if anchor.month == 12 else anchor.year
+        st.session_state[cal_key] = date(next_year, next_month, 1)
+        st.rerun()
+    if nav_today.button("Today", key="cal_today", use_container_width=True):
+        st.session_state[cal_key] = date.today().replace(day=1)
+        st.rerun()
+
+    today_d = date.today()
+    dow_labels = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+    weeks = calendar.Calendar(firstweekday=0).monthdatescalendar(anchor.year, anchor.month)
+
+    cells_html = []
+    cells_html.append('<div class="cal-grid">')
+    for lbl in dow_labels:
+        cells_html.append(f'<div class="cal-dow">{lbl}</div>')
+    for week in weeks:
+        for day in week:
+            if day.month != anchor.month:
+                cells_html.append('<div class="cal-cell empty"></div>')
+                continue
+            classes = "cal-cell" + (" today" if day == today_d else "")
+            evs = events.get(day, [])
+            visible = evs[:3]
+            hidden = len(evs) - len(visible)
+            chips = "".join(
+                f'<div class="cal-chip" title="{ev["tag"]} — {ev["label"]}">'
+                f'<span class="cal-dot {ev["kind"]}"></span>{ev["label"][:16]}</div>'
+                for ev in visible
+            )
+            more = f'<div class="cal-more">+{hidden} more</div>' if hidden > 0 else ""
+            cells_html.append(
+                f'<div class="{classes}">'
+                f'<div class="cal-day">{day.day:02d}</div>'
+                f'<div class="cal-events">{chips}{more}</div>'
+                f'</div>'
+            )
+    cells_html.append('</div>')
+
+    legend_html = (
+        '<div class="cal-legend">'
+        '<span class="cal-chip"><span class="cal-dot brief"></span>Briefing CRA</span>'
+        '<span class="cal-chip"><span class="cal-dot debrief"></span>Debrief</span>'
+        '<span class="cal-chip"><span class="cal-dot pit"></span>Pit stop</span>'
+        '<span class="cal-chip"><span class="cal-dot deadline"></span>Deadline</span>'
+        '<span class="cal-chip"><span class="cal-dot prez"></span>Prez client</span>'
+        '</div>'
+    )
+
+    st.markdown(f'<div class="cal-wrap">{"".join(cells_html)}{legend_html}</div>', unsafe_allow_html=True)
 
     r1a, r1b = st.columns(2)
 
