@@ -803,9 +803,10 @@ with col_title:
 with col_bell:
     bell_label = f"🔔  {len(notifications)}" if notifications else "🔔"
     with st.popover(bell_label, use_container_width=True):
+        _notif_font = "-apple-system, 'Segoe UI', Inter, system-ui, sans-serif"
         st.markdown(
-            f'<div style="font-family:\'Courier Prime\',monospace;font-size:0.75rem;'
-            f'letter-spacing:3px;text-transform:uppercase;color:{DIM};'
+            f'<div style="font-family:{_notif_font};font-size:0.75rem;'
+            f'font-weight:600;letter-spacing:1px;text-transform:uppercase;color:{DIM};'
             f'border-bottom:1px solid {LINE};padding-bottom:0.5rem;margin-bottom:0.6rem;">'
             f'Notifications — {len(notifications)}</div>',
             unsafe_allow_html=True,
@@ -822,13 +823,13 @@ with col_bell:
             for n in notifications:
                 col = tag_colors.get(n["tag"], INK_SOFT)
                 st.markdown(
-                    f'<div style="padding:0.5rem 0.1rem;border-bottom:1px solid {LINE_SOFT};">'
-                    f'<div style="font-family:\'DM Mono\',monospace;font-size:0.62rem;'
-                    f'letter-spacing:2px;color:{col};text-transform:uppercase;">{n["tag"]}</div>'
-                    f'<div style="font-family:\'Courier Prime\',monospace;font-weight:700;'
-                    f'color:{INK};margin-top:0.15rem;">{n["title"]}</div>'
-                    f'<div style="font-family:\'DM Mono\',monospace;font-size:0.72rem;'
-                    f'color:{DIM};margin-top:0.15rem;line-height:1.35;">{n["detail"]}</div>'
+                    f'<div style="padding:0.55rem 0.1rem;border-bottom:1px solid {LINE_SOFT};">'
+                    f'<div style="font-family:{_notif_font};font-size:0.68rem;'
+                    f'font-weight:700;letter-spacing:1px;color:{col};text-transform:uppercase;">{n["tag"]}</div>'
+                    f'<div style="font-family:{_notif_font};font-weight:600;font-size:0.92rem;'
+                    f'color:{INK};margin-top:0.2rem;">{n["title"]}</div>'
+                    f'<div style="font-family:{_notif_font};font-size:0.82rem;'
+                    f'color:{DIM};margin-top:0.2rem;line-height:1.4;">{n["detail"]}</div>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
