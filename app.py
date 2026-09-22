@@ -105,26 +105,119 @@ ACCOUNTING_NAMES: list[str] = [
 ALL_COLLABORATORS: list[str] = sorted(set(CREA_NAMES + CM_NAMES + ACCOUNTING_NAMES))
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Monochrome typewriter palette
+# Theme mode + monochrome typewriter palette
 # ─────────────────────────────────────────────────────────────────────────────
-BG        = "#0a0a0a"
-SURFACE   = "#131313"
-CARD      = "#181818"
-CARD_ALT  = "#1e1e1e"
-LINE      = "#2a2a2a"
-LINE_SOFT = "#1f1f1f"
-TEXT      = "#f2f2f2"
-DIM       = "#8a8a8a"
-DIM_SOFT  = "#5c5c5c"
-INK       = "#ffffff"
-INK_SOFT  = "#d6d6d6"
-SHADOW    = "0 12px 30px rgba(0,0,0,0.55), 0 2px 0 rgba(255,255,255,0.03) inset"
-SHADOW_SM = "0 6px 18px rgba(0,0,0,0.55)"
+THEME_MODE = st.session_state.get("theme_mode", "dark")
 
-# Traffic-light hues kept minimal for KPIs / progress cells only.
-OK   = "#e8e8e8"
-WARN = "#9c9c9c"
-BAD  = "#5a5a5a"
+_DARK_PALETTE = {
+    "BG":        "#0a0a0a",
+    "SURFACE":   "#131313",
+    "CARD":      "#181818",
+    "CARD_ALT":  "#1e1e1e",
+    "LINE":      "#2a2a2a",
+    "LINE_SOFT": "#1f1f1f",
+    "TEXT":      "#f2f2f2",
+    "DIM":       "#8a8a8a",
+    "DIM_SOFT":  "#5c5c5c",
+    "INK":       "#ffffff",
+    "INK_SOFT":  "#d6d6d6",
+    "SHADOW":    "0 12px 30px rgba(0,0,0,0.55), 0 2px 0 rgba(255,255,255,0.03) inset",
+    "SHADOW_SM": "0 6px 18px rgba(0,0,0,0.55)",
+    "OK":        "#e8e8e8",
+    "WARN":      "#9c9c9c",
+    "BAD":       "#5a5a5a",
+    "ETAT_COLOR": {
+        "COMPLETED": "#f2f2f2", "BAT OK": "#c8c8c8", "EN COURS": "#8f8f8f",
+        "ATT BAT":   "#5c5c5c", "ANNULÉ": "#3a3a3a",
+    },
+    "AG_THEME":         "alpine-dark",
+    "AG_BG":            "#131313",
+    "AG_FG":            "#f2f2f2",
+    "AG_HEADER_BG":     "#0a0a0a",
+    "AG_ROW_ALT":       "#181818",
+    "AG_ROW_HOVER":     "rgba(255,255,255,0.06)",
+    "AG_SELECTED_ROW": "rgba(255,255,255,0.10)",
+    "AG_HEADER_BORDER": "#f2f2f2",
+    "AG_FLOATING_BG":   "#0f0f0f",
+    "AG_INPUT_BG":      "#161616",
+    "AG_INPUT_BORDER":  "#333333",
+    "AG_INPUT_PLACEHOLDER": "#666666",
+    "AG_MENU_BG":       "#131313",
+    "AG_MENU_BORDER":   "#2e2e2e",
+    "AG_FILTER_HOVER":  "rgba(255,255,255,0.08)",
+    "AG_BTN_BG":        "#f2f2f2",
+    "AG_BTN_FG":        "#0a0a0a",
+    "AG_ICON":          "#f2f2f2",
+    "PCT_HIGH_BG":  "#f2f2f2", "PCT_HIGH_FG": "#0a0a0a",
+    "PCT_MID_BG":   "#8f8f8f", "PCT_MID_FG":  "#0a0a0a",
+    "PCT_LOW_BG":   "#3a3a3a", "PCT_LOW_FG":  "#f2f2f2",
+    "DEADLINE_ROW_BG": "#2a2a2a", "DEADLINE_ROW_FG": "#ffffff",
+}
+
+_LIGHT_PALETTE = {
+    "BG":        "#f7f7f4",
+    "SURFACE":   "#ffffff",
+    "CARD":      "#ffffff",
+    "CARD_ALT":  "#f0f0ec",
+    "LINE":      "#c8c8c2",
+    "LINE_SOFT": "#e2e2dc",
+    "TEXT":      "#151515",
+    "DIM":       "#5a5a55",
+    "DIM_SOFT":  "#8f8f8a",
+    "INK":       "#000000",
+    "INK_SOFT":  "#2a2a2a",
+    "SHADOW":    "0 8px 24px rgba(0,0,0,0.10), 0 1px 0 rgba(0,0,0,0.03) inset",
+    "SHADOW_SM": "0 4px 12px rgba(0,0,0,0.08)",
+    "OK":        "#111111",
+    "WARN":      "#5a5a5a",
+    "BAD":       "#8a8a85",
+    "ETAT_COLOR": {
+        "COMPLETED": "#0a0a0a", "BAT OK": "#4a4a4a", "EN COURS": "#8f8f8a",
+        "ATT BAT":   "#b3b3ad", "ANNULÉ": "#d8d8d2",
+    },
+    "AG_THEME":         "alpine",
+    "AG_BG":            "#ffffff",
+    "AG_FG":            "#151515",
+    "AG_HEADER_BG":     "#f0f0ec",
+    "AG_ROW_ALT":       "#fafaf7",
+    "AG_ROW_HOVER":     "rgba(0,0,0,0.05)",
+    "AG_SELECTED_ROW": "rgba(0,0,0,0.08)",
+    "AG_HEADER_BORDER": "#0a0a0a",
+    "AG_FLOATING_BG":   "#f0f0ec",
+    "AG_INPUT_BG":      "#ffffff",
+    "AG_INPUT_BORDER":  "#c8c8c2",
+    "AG_INPUT_PLACEHOLDER": "#9a9a95",
+    "AG_MENU_BG":       "#ffffff",
+    "AG_MENU_BORDER":   "#d0d0ca",
+    "AG_FILTER_HOVER":  "rgba(0,0,0,0.05)",
+    "AG_BTN_BG":        "#0a0a0a",
+    "AG_BTN_FG":        "#ffffff",
+    "AG_ICON":          "#0a0a0a",
+    "PCT_HIGH_BG":  "#0a0a0a", "PCT_HIGH_FG": "#ffffff",
+    "PCT_MID_BG":   "#7a7a75", "PCT_MID_FG":  "#ffffff",
+    "PCT_LOW_BG":   "#e0e0da", "PCT_LOW_FG":  "#151515",
+    "DEADLINE_ROW_BG": "#f0e6c6", "DEADLINE_ROW_FG": "#151515",
+}
+
+_P = _LIGHT_PALETTE if THEME_MODE == "light" else _DARK_PALETTE
+
+BG        = _P["BG"]
+SURFACE   = _P["SURFACE"]
+CARD      = _P["CARD"]
+CARD_ALT  = _P["CARD_ALT"]
+LINE      = _P["LINE"]
+LINE_SOFT = _P["LINE_SOFT"]
+TEXT      = _P["TEXT"]
+DIM       = _P["DIM"]
+DIM_SOFT  = _P["DIM_SOFT"]
+INK       = _P["INK"]
+INK_SOFT  = _P["INK_SOFT"]
+SHADOW    = _P["SHADOW"]
+SHADOW_SM = _P["SHADOW_SM"]
+
+OK   = _P["OK"]
+WARN = _P["WARN"]
+BAD  = _P["BAD"]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CSS — typewriter / monochrome theme
@@ -716,13 +809,7 @@ def _plotly_layout(**kwargs) -> dict:
     return defaults
 
 
-ETAT_COLOR = {
-    "COMPLETED": "#f2f2f2",
-    "BAT OK":    "#c8c8c8",
-    "EN COURS":  "#8f8f8f",
-    "ATT BAT":   "#5c5c5c",
-    "ANNULÉ":    "#3a3a3a",
-}
+ETAT_COLOR = _P["ETAT_COLOR"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -845,6 +932,18 @@ with st.sidebar:
         f'border-bottom:1px solid {LINE};padding-bottom:0.5rem;">YKONE · DESK</div>',
         unsafe_allow_html=True,
     )
+
+    _theme_choice = st.radio(
+        "Theme",
+        ["Dark", "Light"],
+        index=1 if THEME_MODE == "light" else 0,
+        horizontal=True,
+        key="theme_radio",
+    )
+    _new_mode = _theme_choice.lower()
+    if _new_mode != THEME_MODE:
+        st.session_state["theme_mode"] = _new_mode
+        st.rerun()
 
     clients = ["All"] + sorted({r for r in df["CLIENT"].dropna() if r})
     sel_client = st.selectbox("Filter by Client", clients, key="sb_client")
@@ -1155,19 +1254,19 @@ with tab_plan:
     gob.configure_column("PIT STOP", width=140)
     gob.configure_column(
         "% D'AVANCEMENT", width=120, type=["numericColumn"], filter="agNumberColumnFilter",
-        cellStyle=JsCode("""
-            function(params) {
+        cellStyle=JsCode(f"""
+            function(params) {{
                 const v = params.value;
                 let bg, color;
-                if (v >= 100) { bg = '#f2f2f2'; color = '#0a0a0a'; }
-                else if (v >= 60) { bg = '#8f8f8f'; color = '#0a0a0a'; }
-                else { bg = '#3a3a3a'; color = '#f2f2f2'; }
-                return {
+                if (v >= 100) {{ bg = '{_P["PCT_HIGH_BG"]}'; color = '{_P["PCT_HIGH_FG"]}'; }}
+                else if (v >= 60) {{ bg = '{_P["PCT_MID_BG"]}'; color = '{_P["PCT_MID_FG"]}'; }}
+                else {{ bg = '{_P["PCT_LOW_BG"]}'; color = '{_P["PCT_LOW_FG"]}'; }}
+                return {{
                     'background': bg, 'color': color,
                     'textAlign': 'center', 'fontWeight': '700',
                     'fontFamily': 'DM Mono, monospace'
-                };
-            }
+                }};
+            }}
         """),
     )
     gob.configure_column("DEADLINE", width=125)
@@ -1184,8 +1283,8 @@ with tab_plan:
         domLayout="normal",
         rowHeight=36, headerHeight=42, floatingFiltersHeight=34,
         suppressMovableColumns=False, animateRows=True,
-        getRowStyle=JsCode("""
-            function(params) {
+        getRowStyle=JsCode(f"""
+            function(params) {{
                 if (!params.data) return null;
                 if (params.data.COMPLETED === true || params.data.COMPLETED === 'true') return null;
                 const dl = params.data['DEADLINE'];
@@ -1196,31 +1295,31 @@ with tab_plan:
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
                 const diffDays = Math.floor((dlDate - today) / (1000 * 60 * 60 * 24));
-                if (diffDays >= 0 && diffDays <= 3) {
-                    return {
-                        'background-color': '#2a2a2a',
-                        'color': '#ffffff',
+                if (diffDays >= 0 && diffDays <= 3) {{
+                    return {{
+                        'background-color': '{_P["DEADLINE_ROW_BG"]}',
+                        'color': '{_P["DEADLINE_ROW_FG"]}',
                         'font-weight': '600'
-                    };
-                }
+                    }};
+                }}
                 return null;
-            }
+            }}
         """),
     )
 
     grid_options = gob.build()
 
     custom_css = {
-        ".ag-theme-alpine-dark": {
-            "--ag-background-color": "#131313",
-            "--ag-foreground-color": "#f2f2f2",
-            "--ag-header-background-color": "#0a0a0a",
-            "--ag-header-foreground-color": "#f2f2f2",
-            "--ag-odd-row-background-color": "#181818",
-            "--ag-row-hover-color": "rgba(255,255,255,0.06)",
-            "--ag-border-color": "#2a2a2a",
-            "--ag-header-column-separator-color": "#2a2a2a",
-            "--ag-selected-row-background-color": "rgba(255,255,255,0.10)",
+        f".ag-theme-{_P['AG_THEME']}": {
+            "--ag-background-color": _P["AG_BG"],
+            "--ag-foreground-color": _P["AG_FG"],
+            "--ag-header-background-color": _P["AG_HEADER_BG"],
+            "--ag-header-foreground-color": _P["AG_FG"],
+            "--ag-odd-row-background-color": _P["AG_ROW_ALT"],
+            "--ag-row-hover-color": _P["AG_ROW_HOVER"],
+            "--ag-border-color": _P["LINE"],
+            "--ag-header-column-separator-color": _P["LINE"],
+            "--ag-selected-row-background-color": _P["AG_SELECTED_ROW"],
             "--ag-font-family": "'Courier Prime', 'DM Mono', monospace",
             "--ag-font-size": "13px",
         },
@@ -1230,16 +1329,19 @@ with tab_plan:
             "text-transform": "uppercase",
             "font-size": "0.7rem !important",
         },
-        ".ag-header": {"border-bottom": "2px solid #f2f2f2 !important"},
-        ".ag-menu": {"background-color": "#131313 !important", "border": "1px solid #2e2e2e !important", "color": "#f2f2f2 !important"},
-        ".ag-filter, .ag-set-filter": {"background-color": "#131313 !important", "color": "#f2f2f2 !important"},
-        ".ag-set-filter-list, .ag-virtual-list-viewport": {"background-color": "#131313 !important"},
-        ".ag-set-filter-item": {"color": "#f2f2f2 !important", "padding": "4px 8px !important"},
-        ".ag-set-filter-item:hover": {"background-color": "rgba(255,255,255,0.08) !important"},
-        ".ag-checkbox-input-wrapper.ag-checked::after": {"color": "#f2f2f2 !important"},
+        ".ag-header": {"border-bottom": f"2px solid {_P['AG_HEADER_BORDER']} !important"},
+        ".ag-menu": {"background-color": f"{_P['AG_MENU_BG']} !important",
+                     "border": f"1px solid {_P['AG_MENU_BORDER']} !important",
+                     "color": f"{_P['AG_FG']} !important"},
+        ".ag-filter, .ag-set-filter": {"background-color": f"{_P['AG_MENU_BG']} !important",
+                                        "color": f"{_P['AG_FG']} !important"},
+        ".ag-set-filter-list, .ag-virtual-list-viewport": {"background-color": f"{_P['AG_MENU_BG']} !important"},
+        ".ag-set-filter-item": {"color": f"{_P['AG_FG']} !important", "padding": "4px 8px !important"},
+        ".ag-set-filter-item:hover": {"background-color": f"{_P['AG_FILTER_HOVER']} !important"},
+        ".ag-checkbox-input-wrapper.ag-checked::after": {"color": f"{_P['AG_FG']} !important"},
         ".ag-filter-apply-panel button": {
-            "background": "#f2f2f2 !important",
-            "color": "#0a0a0a !important",
+            "background": f"{_P['AG_BTN_BG']} !important",
+            "color": f"{_P['AG_BTN_FG']} !important",
             "border": "none !important",
             "padding": "5px 12px !important",
             "border-radius": "0 !important",
@@ -1247,18 +1349,19 @@ with tab_plan:
             "letter-spacing": "1px",
             "text-transform": "uppercase",
         },
-        ".ag-icon-menu, .ag-icon-filter": {"color": "#f2f2f2 !important"},
-        ".ag-floating-filter": {"background-color": "#0f0f0f !important", "border-top": "1px solid #2a2a2a !important"},
+        ".ag-icon-menu, .ag-icon-filter": {"color": f"{_P['AG_ICON']} !important"},
+        ".ag-floating-filter": {"background-color": f"{_P['AG_FLOATING_BG']} !important",
+                                 "border-top": f"1px solid {_P['LINE']} !important"},
         ".ag-floating-filter-input input, .ag-input-field-input": {
-            "background-color": "#161616 !important",
-            "color": "#f2f2f2 !important",
-            "border": "1px solid #333 !important",
+            "background-color": f"{_P['AG_INPUT_BG']} !important",
+            "color": f"{_P['AG_FG']} !important",
+            "border": f"1px solid {_P['AG_INPUT_BORDER']} !important",
             "border-radius": "0 !important",
             "padding": "3px 6px !important",
             "font-family": "'DM Mono', monospace !important",
             "font-size": "12px !important",
         },
-        ".ag-floating-filter-input input::placeholder": {"color": "#666 !important"},
+        ".ag-floating-filter-input input::placeholder": {"color": f"{_P['AG_INPUT_PLACEHOLDER']} !important"},
     }
 
     grid_response = AgGrid(
@@ -1268,7 +1371,7 @@ with tab_plan:
         data_return_mode=DataReturnMode.AS_INPUT,
         fit_columns_on_grid_load=False,
         allow_unsafe_jscode=True,
-        theme="alpine-dark",
+        theme=_P["AG_THEME"],
         custom_css=custom_css,
         height=520,
         key="aggrid_board",
