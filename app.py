@@ -961,8 +961,8 @@ with tab_plan:
                 const diffDays = Math.floor((dlDate - today) / (1000 * 60 * 60 * 24));
                 if (diffDays >= 0 && diffDays <= 3) {
                     return {
-                        'background': '#1f1f1f',
-                        'border-left': '3px solid #f2f2f2',
+                        'background-color': '#2a2a2a',
+                        'color': '#ffffff',
                         'font-weight': '600'
                     };
                 }
