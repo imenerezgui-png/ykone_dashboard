@@ -799,6 +799,72 @@ with tab_plan:
                 st.success(f"'{new_job.strip()}' added.")
                 st.rerun()
 
+    with st.expander("+  Manage Debriefs", expanded=False):
+        active = df[(df["CLIENT"].fillna("") != "") | (df["JOB"].fillna("") != "")].copy()
+        if len(active) == 0:
+            st.info("No jobs yet.")
+        else:
+            active["_label"] = active["CLIENT"].fillna("") + "  —  " + active["JOB"].fillna("")
+            job_labels = active["_label"].tolist()
+            sel_label  = st.selectbox("Select a job to manage its debriefs", job_labels, key="debrief_job_sel")
+            sel_row    = active[active["_label"] == sel_label].iloc[0]
+            orig_idx   = sel_row.name
+            existing   = _parse_debriefs(sel_row["DEBRIEF"])
+            count      = len(existing)
+
+            st.markdown(
+                f'<div class="selected-job">'
+                f'  <div><small>Selected job</small>'
+                f'    <strong>{sel_row["CLIENT"]} — {sel_row["JOB"]}</strong></div>'
+                f'  <span class="count">{count} debrief{"s" if count != 1 else ""}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            if count >= 3:
+                st.warning(f"{count} debriefs logged — consider stopping further requests from this client.")
+
+            tab_modify, tab_add = st.tabs(["  MODIFY A DEBRIEF  ", "  ADD A NEW DEBRIEF  "])
+
+            with tab_modify:
+                if not existing:
+                    st.info("No debriefs recorded yet for this job.")
+                else:
+                    options = [f"#{i + 1}  —  {d}" for i, d in enumerate(existing)]
+                    sel_opt = st.selectbox("Which debrief?", options, key="mod_sel")
+                    sel_i   = options.index(sel_opt)
+                    current = existing[sel_i]
+                    try:
+                        dt_obj = datetime.strptime(current[:16], "%Y-%m-%d %H:%M")
+                        init_d = dt_obj.date()
+                        init_t = dt_obj.time()
+                    except ValueError:
+                        init_d, init_t = None, None
+
+                    mc1, mc2 = st.columns(2)
+                    mod_date = mc1.date_input("New date", value=init_d, key="mod_d")
+                    mod_time = mc2.time_input("New time", value=init_t, key="mod_t")
+
+                    if st.button("Save changes", type="primary", key="btn_mod"):
+                        existing[sel_i] = f"{mod_date} {mod_time}"
+                        df.at[orig_idx, "DEBRIEF"] = ";".join(existing)
+                        st.session_state.df = df
+                        save_data(df)
+                        st.success(f"Debrief #{sel_i + 1} updated.")
+                        st.rerun()
+
+            with tab_add:
+                ac1, ac2 = st.columns(2)
+                new_db_date = ac1.date_input("Date", key="add_db_d")
+                new_db_time = ac2.time_input("Heure", key="add_db_t")
+
+                if st.button(f"+  Log Debrief #{count + 1}", type="primary", key="btn_add_db"):
+                    existing.append(f"{new_db_date} {new_db_time}")
+                    df.at[orig_idx, "DEBRIEF"] = ";".join(existing)
+                    st.session_state.df = df
+                    save_data(df)
+                    st.success(f"Debrief #{len(existing)} logged.")
+                    st.rerun()
+
     st.markdown('<div class="section-title">Job Board</div>', unsafe_allow_html=True)
 
     DISPLAY_COLS = ["CLIENT", "JOB"] + EDITABLE_COLS + ["COMPLETED"]
@@ -1014,74 +1080,6 @@ with tab_plan:
             st.session_state.df = df
             save_data(df)
             st.rerun()
-
-    # ── Debrief manager ──────────────────────────────────────────────────────
-    st.markdown('<div class="section-title">Debrief Manager</div>', unsafe_allow_html=True)
-
-    active = df[(df["CLIENT"].fillna("") != "") | (df["JOB"].fillna("") != "")].copy()
-    if len(active) == 0:
-        st.info("No jobs yet.")
-    else:
-        active["_label"] = active["CLIENT"].fillna("") + "  —  " + active["JOB"].fillna("")
-        job_labels = active["_label"].tolist()
-        sel_label  = st.selectbox("Select a job to manage its debriefs", job_labels, key="debrief_job_sel")
-        sel_row    = active[active["_label"] == sel_label].iloc[0]
-        orig_idx   = sel_row.name
-        existing   = _parse_debriefs(sel_row["DEBRIEF"])
-        count      = len(existing)
-
-        st.markdown(
-            f'<div class="selected-job">'
-            f'  <div><small>Selected job</small>'
-            f'    <strong>{sel_row["CLIENT"]} — {sel_row["JOB"]}</strong></div>'
-            f'  <span class="count">{count} debrief{"s" if count != 1 else ""}</span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-        if count >= 3:
-            st.warning(f"{count} debriefs logged — consider stopping further requests from this client.")
-
-        tab_modify, tab_add = st.tabs(["  MODIFY A DEBRIEF  ", "  ADD A NEW DEBRIEF  "])
-
-        with tab_modify:
-            if not existing:
-                st.info("No debriefs recorded yet for this job.")
-            else:
-                options = [f"#{i + 1}  —  {d}" for i, d in enumerate(existing)]
-                sel_opt = st.selectbox("Which debrief?", options, key="mod_sel")
-                sel_i   = options.index(sel_opt)
-                current = existing[sel_i]
-                try:
-                    dt_obj = datetime.strptime(current[:16], "%Y-%m-%d %H:%M")
-                    init_d = dt_obj.date()
-                    init_t = dt_obj.time()
-                except ValueError:
-                    init_d, init_t = None, None
-
-                mc1, mc2 = st.columns(2)
-                mod_date = mc1.date_input("New date", value=init_d, key="mod_d")
-                mod_time = mc2.time_input("New time", value=init_t, key="mod_t")
-
-                if st.button("Save changes", type="primary", key="btn_mod"):
-                    existing[sel_i] = f"{mod_date} {mod_time}"
-                    df.at[orig_idx, "DEBRIEF"] = ";".join(existing)
-                    st.session_state.df = df
-                    save_data(df)
-                    st.success(f"Debrief #{sel_i + 1} updated.")
-                    st.rerun()
-
-        with tab_add:
-            ac1, ac2 = st.columns(2)
-            new_db_date = ac1.date_input("Date", key="add_db_d")
-            new_db_time = ac2.time_input("Heure", key="add_db_t")
-
-            if st.button(f"+  Log Debrief #{count + 1}", type="primary", key="btn_add_db"):
-                existing.append(f"{new_db_date} {new_db_time}")
-                df.at[orig_idx, "DEBRIEF"] = ";".join(existing)
-                st.session_state.df = df
-                save_data(df)
-                st.success(f"Debrief #{len(existing)} logged.")
-                st.rerun()
 
     with st.expander("Danger Zone", expanded=False):
         if st.button("Delete ALL completed jobs", type="secondary"):
