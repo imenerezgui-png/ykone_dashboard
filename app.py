@@ -823,7 +823,11 @@ if not show_completed:
 # ─────────────────────────────────────────────────────────────────────────────
 # Tabs
 # ─────────────────────────────────────────────────────────────────────────────
-tab_plan, tab_viz = st.tabs(["  PLANNING BOARD  ", "  PROGRESS & ANALYTICS  "])
+tab_plan, tab_viz, tab_team = st.tabs([
+    "  PLANNING BOARD  ",
+    "  PROGRESS & ANALYTICS  ",
+    "  COLLABORATOR ANALYTICS  ",
+])
 
 # ═════════════════════════════════════════════════════════════════════════════
 # TAB 1 — PLANNING BOARD
@@ -1446,3 +1450,251 @@ with tab_viz:
             f'<div class="kpi-label">≥ 3 Debriefs</div></div>',
             unsafe_allow_html=True,
         )
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TAB 3 — COLLABORATOR ANALYTICS
+# ═════════════════════════════════════════════════════════════════════════════
+with tab_team:
+
+    if len(df) == 0:
+        st.info("No data yet. Add jobs in the Planning Board tab.")
+        st.stop()
+
+    ROLE_MAP = [
+        ("TEAM CREA 1", "CREA"),
+        ("TEAM CREA 2", "CREA"),
+        ("CM",          "CM"),
+        ("ACCOUNTS",    "ACCOUNTS"),
+    ]
+
+    def _split_names(v) -> list[str]:
+        if v is None:
+            return []
+        s = str(v).strip()
+        if s in ("", "nan", "None", "NaT"):
+            return []
+        parts = [p.strip().upper() for p in s.replace(",", "/").split("/")]
+        return [p for p in parts if p]
+
+    assignments: list[dict] = []
+    for _, row in df.iterrows():
+        for col, role in ROLE_MAP:
+            for name in _split_names(row.get(col)):
+                dl = row.get("DEADLINE")
+                is_overdue = False
+                if dl and str(dl) not in ("", "nan", "None", "NaT"):
+                    try:
+                        d = datetime.strptime(str(dl)[:10], "%Y-%m-%d").date()
+                        is_overdue = d < today and not bool(row.get("COMPLETED", False))
+                    except ValueError:
+                        pass
+                assignments.append({
+                    "collaborator": name,
+                    "role": role,
+                    "client":      row.get("CLIENT"),
+                    "job":         row.get("JOB"),
+                    "etat":        row.get("ETAT CREA") or "EN COURS",
+                    "completed":   bool(row.get("COMPLETED", False)),
+                    "pct":         int(pd.to_numeric(row.get("% D'AVANCEMENT"), errors="coerce") or 0),
+                    "overdue":     is_overdue,
+                })
+
+    if not assignments:
+        st.info("No collaborators assigned yet — populate TEAM CREA / CM / ACCOUNTS on jobs.")
+        st.stop()
+
+    coll_df = pd.DataFrame(assignments)
+
+    role_options = ["All"] + sorted(coll_df["role"].unique().tolist())
+    sel_role = st.selectbox("Filter by role", role_options, key="coll_role_filter")
+    if sel_role != "All":
+        coll_df = coll_df[coll_df["role"] == sel_role]
+
+    if coll_df.empty:
+        st.info("No assignments for this role.")
+        st.stop()
+
+    per_person = (
+        coll_df.groupby("collaborator")
+        .agg(
+            assignments=("job", "count"),
+            active=("completed", lambda s: int((~s).sum())),
+            completed=("completed", lambda s: int(s.sum())),
+            overdue=("overdue", "sum"),
+            avg_pct=("pct", "mean"),
+            clients=("client", pd.Series.nunique),
+        )
+        .reset_index()
+        .sort_values("assignments", ascending=False)
+    )
+
+    unique_people = len(per_person)
+    total_assign  = int(per_person["assignments"].sum())
+    avg_load      = per_person["assignments"].mean() if unique_people else 0
+    top_person    = per_person.iloc[0]["collaborator"] if unique_people else "—"
+
+    st.markdown(
+        f"""<div class="kpi-grid">
+  <div class="kpi-card"><div class="kpi-value">{unique_people}</div>
+    <div class="kpi-label">Collaborators</div></div>
+  <div class="kpi-card"><div class="kpi-value">{total_assign}</div>
+    <div class="kpi-label">Assignments</div></div>
+  <div class="kpi-card"><div class="kpi-value" style="color:{WARN}">{avg_load:.1f}</div>
+    <div class="kpi-label">Avg / Person</div></div>
+  <div class="kpi-card"><div class="kpi-value" style="color:{OK};font-size:1.6rem;line-height:1.1;">{top_person}</div>
+    <div class="kpi-label">Top loaded</div></div>
+</div>""",
+        unsafe_allow_html=True,
+    )
+
+    r1a, r1b = st.columns([1.4, 1])
+
+    with r1a:
+        st.markdown('<div class="section-title">Workload per collaborator</div>', unsafe_allow_html=True)
+        stacked = (
+            coll_df.groupby(["collaborator", "etat"])
+            .size()
+            .reset_index(name="count")
+        )
+        totals = stacked.groupby("collaborator")["count"].sum().sort_values(ascending=True)
+        ordered = totals.index.tolist()
+        etat_order = ["EN COURS", "ATT BAT", "BAT OK", "COMPLETED", "ANNULÉ"]
+        fig_stack = go.Figure()
+        for etat in etat_order:
+            sub = stacked[stacked["etat"] == etat]
+            if sub.empty:
+                continue
+            counts_by_person = sub.set_index("collaborator")["count"].reindex(ordered).fillna(0)
+            fig_stack.add_trace(go.Bar(
+                x=counts_by_person.values,
+                y=ordered,
+                orientation="h",
+                name=etat,
+                marker=dict(color=ETAT_COLOR.get(etat, "#7a7a7a"), line=dict(color=BG, width=0.5)),
+                hovertemplate="<b>%{y}</b><br>" + etat + ": %{x} jobs<extra></extra>",
+            ))
+        fig_stack.update_layout(**_plotly_layout(
+            barmode="stack",
+            height=max(320, len(ordered) * 34),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
+                        font=dict(color=TEXT, family="DM Mono, monospace", size=10)),
+            xaxis=dict(title="Assignments", showgrid=False, color=DIM),
+            yaxis=dict(showgrid=False, color=TEXT),
+        ))
+        st.plotly_chart(fig_stack, use_container_width=True)
+
+    with r1b:
+        st.markdown('<div class="section-title">Role distribution</div>', unsafe_allow_html=True)
+        role_counts = coll_df["role"].value_counts().reset_index()
+        role_counts.columns = ["role", "count"]
+        role_palette = {"CREA": "#f2f2f2", "CM": "#8f8f8f", "ACCOUNTS": "#4a4a4a"}
+        fig_role = go.Figure(go.Pie(
+            labels=role_counts["role"],
+            values=role_counts["count"],
+            hole=0.58,
+            marker=dict(
+                colors=[role_palette.get(r, "#7a7a7a") for r in role_counts["role"]],
+                line=dict(color=BG, width=3),
+            ),
+            textinfo="percent+label",
+            textfont=dict(color=TEXT, size=12, family="Courier Prime, monospace"),
+            hovertemplate="<b>%{label}</b><br>%{value} assignments (%{percent})<extra></extra>",
+        ))
+        fig_role.update_layout(**_plotly_layout(height=max(320, len(ordered) * 34), showlegend=False))
+        st.plotly_chart(fig_role, use_container_width=True)
+
+    r2a, r2b = st.columns(2)
+
+    with r2a:
+        st.markdown('<div class="section-title">Overdue load</div>', unsafe_allow_html=True)
+        od = per_person[per_person["overdue"] > 0].sort_values("overdue")
+        if od.empty:
+            st.info("No overdue jobs. Team is on schedule.")
+        else:
+            fig_od = go.Figure(go.Bar(
+                x=od["overdue"],
+                y=od["collaborator"],
+                orientation="h",
+                marker=dict(color="#f2f2f2", line=dict(color=BG, width=0.5)),
+                text=od["overdue"],
+                textposition="outside",
+                textfont=dict(color=TEXT, family="DM Mono, monospace"),
+                hovertemplate="<b>%{y}</b><br>%{x} overdue<extra></extra>",
+            ))
+            fig_od.update_layout(**_plotly_layout(
+                height=max(260, len(od) * 34),
+                showlegend=False,
+                xaxis=dict(title="Overdue jobs", showgrid=False, color=DIM, dtick=1),
+                yaxis=dict(showgrid=False, color=TEXT),
+            ))
+            st.plotly_chart(fig_od, use_container_width=True)
+
+    with r2b:
+        st.markdown('<div class="section-title">Avg % advancement</div>', unsafe_allow_html=True)
+        active_only = coll_df[~coll_df["completed"]]
+        if active_only.empty:
+            st.info("No active jobs — everyone shipped.")
+        else:
+            avg = (
+                active_only.groupby("collaborator")["pct"].mean().reset_index()
+                .sort_values("pct")
+            )
+            bar_colors = ["#f2f2f2" if p >= 60 else ("#8f8f8f" if p >= 30 else "#4a4a4a") for p in avg["pct"]]
+            fig_avg = go.Figure(go.Bar(
+                x=avg["pct"],
+                y=avg["collaborator"],
+                orientation="h",
+                marker=dict(color=bar_colors, line=dict(color=BG, width=0.5)),
+                text=[f"{p:.0f}%" for p in avg["pct"]],
+                textposition="outside",
+                textfont=dict(color=TEXT, family="DM Mono, monospace"),
+                hovertemplate="<b>%{y}</b><br>%{x:.0f}%<extra></extra>",
+            ))
+            fig_avg.add_vline(x=50, line_color=DIM, line_dash="dot", line_width=1)
+            fig_avg.update_layout(**_plotly_layout(
+                height=max(260, len(avg) * 34),
+                showlegend=False,
+                xaxis=dict(range=[0, 115], showgrid=False, title="Avg %", color=DIM),
+                yaxis=dict(showgrid=False, color=TEXT),
+            ))
+            st.plotly_chart(fig_avg, use_container_width=True)
+
+    st.markdown('<div class="section-title">Collaborator × Client matrix</div>', unsafe_allow_html=True)
+    matrix = (
+        coll_df.pivot_table(index="collaborator", columns="client",
+                            values="job", aggfunc="count", fill_value=0)
+    )
+    if matrix.empty:
+        st.info("Not enough data to build the matrix.")
+    else:
+        matrix = matrix.loc[matrix.sum(axis=1).sort_values().index]
+        fig_hm = go.Figure(go.Heatmap(
+            z=matrix.values,
+            x=matrix.columns.tolist(),
+            y=matrix.index.tolist(),
+            colorscale=[[0, BG], [0.4, "#3a3a3a"], [0.75, "#8f8f8f"], [1, "#f2f2f2"]],
+            showscale=False,
+            hovertemplate="<b>%{y}</b><br>Client: %{x}<br>%{z} jobs<extra></extra>",
+            text=matrix.values,
+            texttemplate="%{text}",
+            textfont=dict(color=TEXT, family="DM Mono, monospace", size=10),
+        ))
+        fig_hm.update_layout(**_plotly_layout(
+            height=max(320, len(matrix) * 30),
+            xaxis=dict(color=DIM, side="top", tickangle=-35),
+            yaxis=dict(color=TEXT),
+        ))
+        st.plotly_chart(fig_hm, use_container_width=True)
+
+    st.markdown('<div class="section-title">Collaborator sheet</div>', unsafe_allow_html=True)
+    sheet = per_person.rename(columns={
+        "collaborator": "Collaborator",
+        "assignments":  "Assignments",
+        "active":       "Active",
+        "completed":    "Completed",
+        "overdue":      "Overdue",
+        "avg_pct":      "Avg %",
+        "clients":      "Clients",
+    })
+    sheet["Avg %"] = sheet["Avg %"].round(0).astype(int)
+    st.dataframe(sheet, use_container_width=True, hide_index=True)
