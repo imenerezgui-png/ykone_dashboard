@@ -62,9 +62,47 @@ ALL_COLS  = ["id", "CLIENT", "JOB"] + EDITABLE_COLS + ["COMPLETED"]
 ETAT_OPTIONS = ["EN COURS", "ATT BAT", "BAT OK", "COMPLETED", "ANNULÉ"]
 
 # Editable defaults — populate via the sidebar or the JSON backup file over time.
-CREA_NAMES: list[str] = []
-CM_NAMES: list[str] = []
-ACCOUNTING_NAMES: list[str] = []
+# Ykone roster — kept sorted for stable dropdowns.
+CREA_NAMES: list[str] = [
+    "Ahmed BOUJNEH",
+    "Ahmed HANAFI",
+    "Aicha MEDDEB",
+    "Amira Marzouki",
+    "Chams YAHYAOUI",
+    "Dhia DHAYA",
+    "Donia BOUAZZA",
+    "Fatma BALI",
+    "Faten ERRAIES",
+    "Feryel Ben ALI",
+    "Hadhemi Mannai",
+    "Hajer Ben Sannou",
+    "Imen BOUZGAROU",
+    "Islem BRAHMI",
+    "Kalthoum AMAMI",
+    "Malek AISSA",
+    "Mohamed Aziz BEN AMARA",
+    "Mohamed Dhia OUEFNI",
+    "Neila AYARI",
+    "Nour El Hana BEN JEDDY",
+    "Nour Kasdaghli",
+    "Nourhene BEN MOUSSA",
+    "Nourhene HADDAD",
+    "Ons BENNOUR",
+    "Syrine CHATTY",
+    "Yassmine GUIRAT",
+]
+CM_NAMES: list[str] = [
+    "Farah Jemaa",
+    "Roua Lahmer",
+]
+ACCOUNTING_NAMES: list[str] = [
+    "Chayma BRAHMI",
+    "Farah Labbouz",
+    "Ghalia ELKAMEL",
+    "Hedia BOUFAIED",
+    "Wassim Abassi",
+]
+ALL_COLLABORATORS: list[str] = sorted(set(CREA_NAMES + CM_NAMES + ACCOUNTING_NAMES))
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Monochrome typewriter palette
@@ -727,6 +765,10 @@ with st.sidebar:
     etats = ["All"] + ETAT_OPTIONS
     sel_etat = st.selectbox("Filter by État", etats, key="sb_etat")
 
+    sel_collab = st.selectbox(
+        "Filter by Collaborator", ["All"] + ALL_COLLABORATORS, key="sb_collab"
+    )
+
     show_completed = st.checkbox("Show Completed", value=True, key="cb_completed")
 
     st.markdown("---")
@@ -817,6 +859,13 @@ if sel_client != "All":
     view = view[view["CLIENT"] == sel_client]
 if sel_etat != "All":
     view = view[view["ETAT CREA"] == sel_etat]
+if sel_collab != "All":
+    _needle = sel_collab.upper()
+    _team_cols = ["TEAM CREA 1", "TEAM CREA 2", "CM", "ACCOUNTS"]
+    _mask = view[_team_cols].fillna("").astype(str).apply(
+        lambda col: col.str.upper().str.contains(_needle, regex=False)
+    ).any(axis=1)
+    view = view[_mask]
 if not show_completed:
     view = view[~view["COMPLETED"].astype(bool)]
 
@@ -841,10 +890,10 @@ with tab_plan:
             new_job    = c2.text_input("JOB *")
 
             c3, c4, c5, c6 = st.columns(4)
-            new_tc1 = c3.text_input("TEAM CREA 1", placeholder="Choose members")
-            new_tc2 = c4.text_input("TEAM CREA 2", placeholder="Choose members")
-            new_cm  = c5.text_input("CM",          placeholder="Choose members")
-            new_acc = c6.text_input("ACCOUNTS",    placeholder="Choose members")
+            new_tc1 = c3.multiselect("TEAM CREA 1", CREA_NAMES, key="new_tc1")
+            new_tc2 = c4.multiselect("TEAM CREA 2", CREA_NAMES, key="new_tc2")
+            new_cm  = c5.multiselect("CM",          CM_NAMES,   key="new_cm")
+            new_acc = c6.multiselect("ACCOUNTS",    ACCOUNTING_NAMES, key="new_acc")
 
             c7, c8, c9 = st.columns(3)
             with c7:
@@ -881,10 +930,10 @@ with tab_plan:
                     "id":              str(uuid.uuid4())[:8],
                     "CLIENT":          new_client.strip(),
                     "JOB":             new_job.strip(),
-                    "TEAM CREA 1":     new_tc1.strip(),
-                    "TEAM CREA 2":     new_tc2.strip(),
-                    "CM":              new_cm.strip(),
-                    "ACCOUNTS":        new_acc.strip(),
+                    "TEAM CREA 1":     " / ".join(new_tc1),
+                    "TEAM CREA 2":     " / ".join(new_tc2),
+                    "CM":              " / ".join(new_cm),
+                    "ACCOUNTS":        " / ".join(new_acc),
                     "BRIEFING CRA":    f"{new_brief_d} {new_brief_t}"     if new_brief_d   else None,
                     "DEBRIEF":         f"{new_debrief_d} {new_debrief_t}" if new_debrief_d else "",
                     "PIT STOP":        f"{new_pit_d} {new_pit_t}"         if new_pit_d     else None,
