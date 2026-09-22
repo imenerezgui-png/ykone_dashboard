@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Ykone campaign intelligence dashboard." />
+    <title>Ykone | Intelligence Desk</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand-lockup">
+        <img src="ykone_logo.jpg" alt="Ykone" class="brand-logo" />
+        <span>INTELLIGENCE DESK</span>
+      </div>
+
+      <nav class="main-nav" aria-label="Primary navigation">
+        <button class="nav-item active" data-view="overview"><span>01</span>Overview</button>
+        <button class="nav-item" data-view="campaigns"><span>02</span>Campaigns</button>
+        <button class="nav-item" data-view="creators"><span>03</span>Creators</button>
+        <button class="nav-item" data-view="content"><span>04</span>Content</button>
+        <button class="nav-item" data-view="reports"><span>05</span>Reports</button>
+      </nav>
+
+      <div class="account-card">
+        <div class="avatar">IR</div>
+        <div>
+          <strong>Imene Rezg</strong>
+          <small>Strategy director</small>
+        </div>
+        <button class="more-button" aria-label="Account options">...</button>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <p id="view-kicker">01 / LIVE OVERVIEW</p>
+        <div class="topbar-actions">
+          <button class="icon-button" aria-label="Search">⌕</button>
+          <button class="icon-button" aria-label="Notifications">◌<i></i></button>
+          <button class="export-button" id="export-button">Export report <span>↓</span></button>
+        </div>
+      </header>
+
+      <section class="welcome-row">
+        <div>
+          <p class="eyebrow">MONDAY, 22 SEPTEMBER</p>
+          <h1 id="page-title">Good morning, Imene.</h1>
+          <p class="intro">A clear read on the work moving culture forward.</p>
+        </div>
+        <div class="date-filter" role="group" aria-label="Report period">
+          <button class="period-button" data-period="7D">7D</button>
+          <button class="period-button active" data-period="30D">30D</button>
+          <button class="period-button" data-period="90D">90D</button>
+          <button class="period-button" data-period="YTD">YTD</button>
+        </div>
+      </section>
+
+      <section class="metrics-grid" aria-label="Performance metrics">
+        <article class="metric-card">
+          <div class="metric-head"><span>CAMPAIGN REACH</span><b>↗ 12.4%</b></div>
+          <strong id="reach-value">18.6M</strong>
+          <p>Unique people reached</p>
+          <div class="sparkline"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+        </article>
+        <article class="metric-card dark">
+          <div class="metric-head"><span>ENGAGEMENT RATE</span><b>↗ 1.8%</b></div>
+          <strong id="engagement-value">6.42%</strong>
+          <p>Above category benchmark</p>
+          <div class="sparkline light"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-head"><span>ACTIVE CREATORS</span><b>+08</b></div>
+          <strong id="creators-value">124</strong>
+          <p>Across 14 markets</p>
+          <div class="creator-stack" aria-hidden="true"><i>SK</i><i>AL</i><i>JM</i><i>+121</i></div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-head"><span>CONTENT OUTPUT</span><b>↗ 9.6%</b></div>
+          <strong id="content-value">487</strong>
+          <p>Pieces published this period</p>
+          <div class="barcode" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        </article>
+      </section>
+
+      <section class="dashboard-grid">
+        <article class="panel performance-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">PERFORMANCE SIGNAL</p><h2>Audience response</h2></div>
+            <div class="segmented" role="group" aria-label="Chart view"><button class="chart-mode active" data-mode="reach">Reach</button><button class="chart-mode" data-mode="engagement">Engagement</button></div>
+          </div>
+          <div class="chart-summary"><strong id="chart-total">18,642,089</strong><span id="chart-change">+12.4% vs prior period</span></div>
+          <div class="line-chart" aria-label="Audience response chart">
+            <div class="y-labels"><span>8M</span><span>6M</span><span>4M</span><span>2M</span><span>0</span></div>
+            <svg viewBox="0 0 720 250" preserveAspectRatio="none" role="img" aria-label="Trend rising across thirty days">
+              <path class="grid-line" d="M0 18 H720 M0 75 H720 M0 132 H720 M0 189 H720 M0 246 H720" />
+              <path class="area" d="M0 198 C40 175,60 178,93 158 S144 172,184 146 S244 137,278 151 S343 102,375 127 S436 87,470 111 S525 93,561 76 S627 112,653 65 S688 59,720 33 V250 H0Z" />
+              <path id="chart-line" class="chart-line" d="M0 198 C40 175,60 178,93 158 S144 172,184 146 S244 137,278 151 S343 102,375 127 S436 87,470 111 S525 93,561 76 S627 112,653 65 S688 59,720 33" />
+              <circle id="chart-dot" cx="720" cy="33" r="5" />
+            </svg>
+            <div class="x-labels"><span>01 SEP</span><span>08 SEP</span><span>15 SEP</span><span>22 SEP</span><span>30 SEP</span></div>
+          </div>
+        </article>
+
+        <article class="panel activity-panel">
+          <div class="panel-heading"><div><p class="eyebrow">LIVE FEED</p><h2>Recent activity</h2></div><button class="text-button">View all →</button></div>
+          <ol class="activity-list">
+            <li><span class="activity-mark solid"></span><div><strong>Maison Margiela / Paris</strong><p>12 creators published campaign content.</p></div><time>08:42</time></li>
+            <li><span class="activity-mark outlined"></span><div><strong>Weekly report ready</strong><p>Summer House performance pack is available.</p></div><time>08:10</time></li>
+            <li><span class="activity-mark solid"></span><div><strong>New creator match</strong><p>03 profiles matched to the Oura brief.</p></div><time>YEST.</time></li>
+            <li><span class="activity-mark outlined"></span><div><strong>Campaign milestone</strong><p>RIMOWA / SEA reached 2M organic views.</p></div><time>YEST.</time></li>
+          </ol>
+        </article>
+      </section>
+
+      <section class="campaign-section">
+        <div class="section-heading"><div><p class="eyebrow">IN MOTION</p><h2>Priority campaigns</h2></div><button class="text-button">All campaigns →</button></div>
+        <div class="campaign-list">
+          <article class="campaign-row"><div class="campaign-code">01</div><div class="campaign-name"><strong>Maison Margiela</strong><span>Fragrance / EMEA</span></div><div class="progress-group"><div><span>DELIVERY</span><b>78%</b></div><div class="progress"><i style="width:78%"></i></div></div><div class="campaign-stat"><span>REACH</span><b>6.2M</b></div><button class="arrow-button" aria-label="Open Maison Margiela campaign">↗</button></article>
+          <article class="campaign-row"><div class="campaign-code">02</div><div class="campaign-name"><strong>Oura</strong><span>Wellness / Global</span></div><div class="progress-group"><div><span>DELIVERY</span><b>61%</b></div><div class="progress"><i style="width:61%"></i></div></div><div class="campaign-stat"><span>REACH</span><b>4.8M</b></div><button class="arrow-button" aria-label="Open Oura campaign">↗</button></article>
+          <article class="campaign-row"><div class="campaign-code">03</div><div class="campaign-name"><strong>RIMOWA</strong><span>Travel / APAC</span></div><div class="progress-group"><div><span>DELIVERY</span><b>43%</b></div><div class="progress"><i style="width:43%"></i></div></div><div class="campaign-stat"><span>REACH</span><b>3.1M</b></div><button class="arrow-button" aria-label="Open RIMOWA campaign">↗</button></article>
+        </div>
+      </section>
+    </main>
+    <div class="toast" id="toast" role="status" aria-live="polite">Report download prepared.</div>
+    <script src="app.js"></script>
+  </body>
+</html>
