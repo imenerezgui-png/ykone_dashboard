@@ -865,6 +865,9 @@ with tab_plan:
                     st.success(f"Debrief #{len(existing)} logged.")
                     st.rerun()
 
+    with st.expander("+  Add Timeline", expanded=False):
+        st.caption("Coming soon.")
+
     st.markdown('<div class="section-title">Job Board</div>', unsafe_allow_html=True)
 
     DISPLAY_COLS = ["CLIENT", "JOB"] + EDITABLE_COLS + ["COMPLETED"]
@@ -958,8 +961,8 @@ with tab_plan:
                 const diffDays = Math.floor((dlDate - today) / (1000 * 60 * 60 * 24));
                 if (diffDays >= 0 && diffDays <= 3) {
                     return {
-                        'background': 'linear-gradient(90deg, rgba(255,255,255,0.14), rgba(255,255,255,0.04))',
-                        'color': '#ffffff',
+                        'background': '#1f1f1f',
+                        'border-left': '3px solid #f2f2f2',
                         'font-weight': '600'
                     };
                 }
