@@ -1,5 +1,5 @@
 """
-Ykone Task Dispatch — Internal job & debrief manager.
+Ykone Dispatch Center — internal job & debrief manager.
 Monochrome typewriter theme (black / white / grey shadows).
 """
 
@@ -21,7 +21,7 @@ from st_aggrid import AgGrid, DataReturnMode, GridOptionsBuilder, GridUpdateMode
 # Page config  (must be first Streamlit call)
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Ykone Task Dispatch",
+    page_title="Ykone Dispatch Center",
     page_icon="ykone_logo.jpg",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -730,7 +730,63 @@ ETAT_COLOR = {
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown(STYLE, unsafe_allow_html=True)
 
-col_logo, col_title = st.columns([1, 6])
+df = get_df()
+
+
+def _row_team_members(row) -> set[str]:
+    people: set[str] = set()
+    for col in ("TEAM CREA 1", "TEAM CREA 2", "CM", "ACCOUNTS"):
+        v = row.get(col)
+        if not v:
+            continue
+        for part in str(v).replace(",", "/").split("/"):
+            part = part.strip()
+            if part and part.lower() not in ("nan", "none"):
+                people.add(part.upper())
+    return people
+
+
+def _build_notifications(frame: pd.DataFrame) -> list[dict]:
+    out: list[dict] = []
+    today_d = date.today()
+    for _, row in frame.iterrows():
+        dl = row.get("DEADLINE")
+        if dl and not bool(row.get("COMPLETED", False)):
+            try:
+                d = datetime.strptime(str(dl)[:10], "%Y-%m-%d").date()
+                diff = (d - today_d).days
+                title = f"{row.get('CLIENT', '?')} — {row.get('JOB', '?')}"
+                if 0 <= diff <= 3:
+                    label = "today" if diff == 0 else f"in {diff} day{'s' if diff != 1 else ''}"
+                    out.append({"kind": "deadline", "tag": "DEADLINE", "title": title,
+                                "detail": f"Deadline {label} — {d.isoformat()}"})
+                elif diff < 0:
+                    out.append({"kind": "overdue", "tag": "OVERDUE", "title": title,
+                                "detail": f"Overdue by {-diff} day{'s' if -diff != 1 else ''}"})
+            except ValueError:
+                pass
+        n_debriefs = len(_parse_debriefs(row.get("DEBRIEF")))
+        if n_debriefs >= 3:
+            out.append({
+                "kind": "debriefs", "tag": "DEBRIEFS",
+                "title": f"{row.get('CLIENT', '?')} — {row.get('JOB', '?')}",
+                "detail": f"{n_debriefs} debriefs logged — client instability signal",
+            })
+        people = _row_team_members(row)
+        if len(people) >= 3 and not bool(row.get("COMPLETED", False)):
+            out.append({
+                "kind": "team", "tag": "TEAM",
+                "title": f"{row.get('CLIENT', '?')} — {row.get('JOB', '?')}",
+                "detail": f"Team of {len(people)} assembled: {', '.join(sorted(people))[:120]}",
+            })
+    order = {"overdue": 0, "deadline": 1, "debriefs": 2, "team": 3}
+    out.sort(key=lambda n: order.get(n["kind"], 9))
+    return out
+
+
+notifications = _build_notifications(df)
+
+col_logo, col_title, col_bell = st.columns([1, 5, 1])
 with col_logo:
     if LOGO_FILE.exists():
         st.image(str(LOGO_FILE), width=140)
@@ -738,14 +794,44 @@ with col_title:
     st.markdown(
         '<div class="dash-header">'
         '  <div>'
-        '    <div class="dash-title">Task Dispatch</div>'
+        '    <div class="dash-title">Dispatch Center</div>'
         '    <div class="dash-subtitle">Internal Job & Debrief Ledger</div>'
         '  </div>'
         '</div>',
         unsafe_allow_html=True,
     )
-
-df = get_df()
+with col_bell:
+    bell_label = f"🔔  {len(notifications)}" if notifications else "🔔"
+    with st.popover(bell_label, use_container_width=True):
+        st.markdown(
+            f'<div style="font-family:\'Courier Prime\',monospace;font-size:0.75rem;'
+            f'letter-spacing:3px;text-transform:uppercase;color:{DIM};'
+            f'border-bottom:1px solid {LINE};padding-bottom:0.5rem;margin-bottom:0.6rem;">'
+            f'Notifications — {len(notifications)}</div>',
+            unsafe_allow_html=True,
+        )
+        if not notifications:
+            st.caption("All clear. No signals.")
+        else:
+            tag_colors = {
+                "OVERDUE":  BAD,
+                "DEADLINE": WARN,
+                "DEBRIEFS": OK,
+                "TEAM":     INK_SOFT,
+            }
+            for n in notifications:
+                col = tag_colors.get(n["tag"], INK_SOFT)
+                st.markdown(
+                    f'<div style="padding:0.5rem 0.1rem;border-bottom:1px solid {LINE_SOFT};">'
+                    f'<div style="font-family:\'DM Mono\',monospace;font-size:0.62rem;'
+                    f'letter-spacing:2px;color:{col};text-transform:uppercase;">{n["tag"]}</div>'
+                    f'<div style="font-family:\'Courier Prime\',monospace;font-weight:700;'
+                    f'color:{INK};margin-top:0.15rem;">{n["title"]}</div>'
+                    f'<div style="font-family:\'DM Mono\',monospace;font-size:0.72rem;'
+                    f'color:{DIM};margin-top:0.15rem;line-height:1.35;">{n["detail"]}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Sidebar
