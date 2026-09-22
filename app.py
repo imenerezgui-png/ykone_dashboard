@@ -1668,21 +1668,31 @@ with tab_team:
         st.info("Not enough data to build the matrix.")
     else:
         matrix = matrix.loc[matrix.sum(axis=1).sort_values().index]
+        z_values = matrix.values
+        text_values = [["" if v == 0 else str(int(v)) for v in row] for row in z_values]
         fig_hm = go.Figure(go.Heatmap(
-            z=matrix.values,
+            z=z_values,
             x=matrix.columns.tolist(),
             y=matrix.index.tolist(),
-            colorscale=[[0, BG], [0.4, "#3a3a3a"], [0.75, "#8f8f8f"], [1, "#f2f2f2"]],
+            colorscale=[
+                [0.0, "#ffffff"],
+                [0.35, "#ededed"],
+                [0.7, "#cccccc"],
+                [1.0, "#8f8f8f"],
+            ],
             showscale=False,
             hovertemplate="<b>%{y}</b><br>Client: %{x}<br>%{z} jobs<extra></extra>",
-            text=matrix.values,
+            text=text_values,
             texttemplate="%{text}",
-            textfont=dict(color=TEXT, family="DM Mono, monospace", size=10),
+            textfont=dict(color="#0a0a0a", family="DM Mono, monospace", size=12),
+            xgap=2,
+            ygap=2,
         ))
         fig_hm.update_layout(**_plotly_layout(
-            height=max(320, len(matrix) * 30),
-            xaxis=dict(color=DIM, side="top", tickangle=-35),
-            yaxis=dict(color=TEXT),
+            plot_bgcolor="#ffffff",
+            height=max(340, len(matrix) * 32),
+            xaxis=dict(color=DIM, side="top", tickangle=-35, showgrid=False, zeroline=False),
+            yaxis=dict(color=TEXT, showgrid=False, zeroline=False),
         ))
         st.plotly_chart(fig_hm, use_container_width=True)
 
