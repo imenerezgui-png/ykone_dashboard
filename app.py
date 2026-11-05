@@ -10,7 +10,7 @@ import copy
 import io
 import json
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -714,24 +714,115 @@ def save_data(df: pd.DataFrame) -> None:
     df.to_json(DATA_FILE, orient="records", indent=2, force_ascii=False)
 
 
-def load_timelines() -> list[dict]:
+def load_timelines() -> tuple[list[dict], list[dict]]:
     if not TIMELINE_FILE.exists():
-        return []
+        return [], []
     with open(TIMELINE_FILE, "r", encoding="utf-8") as f:
         records = json.load(f)
-    if not isinstance(records, list) or any(not isinstance(item, dict) for item in records):
-        raise ValueError("Timeline data must be a JSON list of timeline objects.")
-    return records
+    if isinstance(records, list):
+        timelines, stats = records, []
+    elif isinstance(records, dict):
+        timelines = records.get("timelines", [])
+        stats = records.get("stats", [])
+    else:
+        raise ValueError("Timeline data must be a list or an object containing timelines and stats.")
+    if any(not isinstance(items, list) for items in (timelines, stats)):
+        raise ValueError("Timeline data must contain lists for timelines and stats.")
+    if any(not isinstance(item, dict) for items in (timelines, stats) for item in items):
+        raise ValueError("Timeline records and statistics must be JSON objects.")
+    if any(
+        not isinstance(timeline.get("steps", []), list)
+        or any(not isinstance(step, dict) for step in timeline.get("steps", []))
+        for timeline in timelines
+    ):
+        raise ValueError("Each timeline must contain a list of step objects.")
+    return timelines, stats
 
 
-def save_timelines(timelines: list[dict]) -> None:
+def save_timelines(timelines: list[dict], stats: list[dict]) -> None:
     if not FS_WRITABLE:
         raise OSError("The data directory is not writable.")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     TIMELINE_FILE.write_text(
-        json.dumps(timelines, ensure_ascii=False, indent=2),
+        json.dumps({"timelines": timelines, "stats": stats}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+def _parse_utc_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _archive_due_weekly_steps(
+    timelines: list[dict],
+    stats: list[dict],
+    now: datetime | None = None,
+) -> tuple[list[dict], list[dict], int]:
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    now = now.astimezone(timezone.utc)
+    active = copy.deepcopy(timelines)
+    archived = copy.deepcopy(stats)
+    archived_count = 0
+
+    for timeline in active:
+        steps = timeline.get("steps", [])
+        weekly_steps = [
+            (index, step) for index, step in enumerate(steps)
+            if str(step.get("repetition", "")).casefold() == "hebdomadaire"
+        ]
+        if not weekly_steps or not steps or any(not step.get("validated") for step in steps):
+            continue
+
+        validation_times = [_parse_utc_datetime(step.get("validated_at")) for step in steps]
+        if any(value is None for value in validation_times):
+            continue
+        last_validated_at = max(value for value in validation_times if value is not None)
+        if now - last_validated_at < timedelta(days=7):
+            continue
+
+        cycle = max(1, int(timeline.get("cycle", 1)))
+        for index, step in weekly_steps:
+            archived.append({
+                "id": str(uuid.uuid4()),
+                "timeline_id": timeline["id"],
+                "brand": timeline["brand"],
+                "brief_type": timeline["brief_type"],
+                "cycle": cycle,
+                "step_number": index + 1,
+                "deliverable": step.get("deliverable", ""),
+                "account": step.get("account", ""),
+                "start_date": step.get("start_date"),
+                "end_date": step.get("end_date"),
+                "repetition": step.get("repetition", ""),
+                "status": step.get("status", ""),
+                "validated_by": step.get("validated_by", ""),
+                "validated_at": step.get("validated_at"),
+                "comment": step.get("comment", ""),
+                "archived_at": now.isoformat(timespec="seconds"),
+            })
+            step.update({
+                "start_date": None,
+                "end_date": None,
+                "status": "À venir",
+                "validated": False,
+                "validated_by": "",
+                "validated_at": None,
+                "comment": "",
+            })
+            archived_count += 1
+        timeline["cycle"] = cycle + 1
+
+    return active, archived, archived_count
 
 
 def df_to_json_bytes(df: pd.DataFrame) -> bytes:
@@ -843,12 +934,25 @@ df = get_df()
 
 if "timelines" not in st.session_state:
     try:
-        st.session_state.timelines = load_timelines()
+        timelines, timeline_stats = load_timelines()
+        migration_time = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        migrated = False
+        for timeline in timelines:
+            for step in timeline.get("steps", []):
+                if step.get("validated") and not step.get("validated_at"):
+                    step["validated_at"] = migration_time
+                    migrated = True
+        if migrated:
+            save_timelines(timelines, timeline_stats)
+        st.session_state.timelines = timelines
+        st.session_state.timeline_stats = timeline_stats
         st.session_state.timeline_load_error = None
     except (OSError, ValueError) as exc:
         st.session_state.timelines = []
+        st.session_state.timeline_stats = []
         st.session_state.timeline_load_error = str(exc)
 st.session_state.setdefault("timeline_load_error", None)
+st.session_state.setdefault("timeline_stats", [])
 
 
 def _persist_timelines(
@@ -860,7 +964,7 @@ def _persist_timelines(
         st.error("Timeline data could not be loaded, so changes are disabled to protect the existing file.")
         return
     try:
-        save_timelines(records)
+        save_timelines(records, st.session_state.timeline_stats)
     except OSError as exc:
         st.error(f"Could not save timeline changes: {exc}")
         return
@@ -869,6 +973,29 @@ def _persist_timelines(
         st.session_state["timeline_selector"] = selected_timeline_id
     st.success(success_message)
     st.rerun()
+
+
+@st.fragment(run_every="1h")
+def _run_weekly_timeline_archiver() -> None:
+    if st.session_state.get("timeline_load_error"):
+        return
+    active, archived, count = _archive_due_weekly_steps(
+        st.session_state.timelines,
+        st.session_state.timeline_stats,
+    )
+    if not count:
+        return
+    try:
+        save_timelines(active, archived)
+    except OSError as exc:
+        st.error(f"Could not archive weekly timeline steps: {exc}")
+        return
+    st.session_state.timelines = active
+    st.session_state.timeline_stats = archived
+    st.rerun(scope="app")
+
+
+_run_weekly_timeline_archiver()
 
 
 def _row_team_members(row) -> set[str]:
@@ -1109,9 +1236,10 @@ if not show_completed:
 # ─────────────────────────────────────────────────────────────────────────────
 # Tabs
 # ─────────────────────────────────────────────────────────────────────────────
-tab_plan, tab_timeline, tab_viz, tab_team = st.tabs([
+tab_plan, tab_timeline, tab_timeline_stats, tab_viz, tab_team = st.tabs([
     "  PLANNING BOARD  ",
     "  TIMELINE  ",
+    "  TIMELINE STATS  ",
     "  PROGRESS & ANALYTICS  ",
     "  COLLABORATOR ANALYTICS  ",
 ])
@@ -1516,6 +1644,7 @@ with tab_timeline:
                         "status": "À venir",
                         "validated": False,
                         "validated_by": "",
+                        "validated_at": None,
                         "comment": "",
                     }],
                 }
@@ -1554,6 +1683,10 @@ with tab_timeline:
                 progress,
                 text=f"{validated_count}/{len(steps)} steps validated · {round(progress * 100)}%",
             )
+            st.caption(
+                f"Cycle {selected_timeline.get('cycle', 1)} · Weekly steps are archived "
+                "seven days after every step in the timeline is validated."
+            )
 
             account_names = set(ACCOUNTING_NAMES)
             for value in df["ACCOUNTS"].dropna().astype(str):
@@ -1576,7 +1709,7 @@ with tab_timeline:
                         )
 
             status_options = ["À venir", "En cours", "En retard", "Terminé"]
-            repetition_options = ["Aucune", "Quotidienne", "Hebdomadaire", "Mensuelle", "Autre"]
+            repetition_options = ["Aucune", "Hebdomadaire"]
 
             def _date_value(value):
                 if not value:
@@ -1692,6 +1825,13 @@ with tab_timeline:
                                         item for item in target_timeline["steps"]
                                         if item["id"] == step_id
                                     )
+                                    if is_validated:
+                                        validated_at = (
+                                            target_step.get("validated_at")
+                                            or datetime.now(timezone.utc).isoformat(timespec="seconds")
+                                        )
+                                    else:
+                                        validated_at = None
                                     target_step.update({
                                         "deliverable": deliverable.strip(),
                                         "account": account,
@@ -1701,6 +1841,7 @@ with tab_timeline:
                                         "status": "Terminé" if is_validated else status,
                                         "validated": is_validated,
                                         "validated_by": validated_by if is_validated else "",
+                                        "validated_at": validated_at,
                                         "comment": comment.strip(),
                                     })
                                     _persist_timelines(
@@ -1724,6 +1865,7 @@ with tab_timeline:
                     "status": "À venir",
                     "validated": False,
                     "validated_by": "",
+                    "validated_at": None,
                     "comment": "",
                 })
                 _persist_timelines(
@@ -1734,7 +1876,41 @@ with tab_timeline:
         st.info("Create a timeline to start adding steps.")
 
 # ═════════════════════════════════════════════════════════════════════════════
-# TAB 3 — PROGRESS & ANALYTICS
+# TAB 3 — TIMELINE STATS
+# ═════════════════════════════════════════════════════════════════════════════
+with tab_timeline_stats:
+    st.markdown('<div class="section-title">Timeline Stats</div>', unsafe_allow_html=True)
+    if not st.session_state.timeline_stats:
+        st.info("Archived weekly steps will appear here after the timeline cycle closes.")
+    else:
+        stats_df = pd.DataFrame(st.session_state.timeline_stats)
+        if "archived_at" in stats_df.columns:
+            stats_df = stats_df.sort_values("archived_at", ascending=False)
+        visible_columns = [
+            "brand", "brief_type", "cycle", "step_number", "deliverable",
+            "account", "start_date", "end_date", "repetition", "validated_by",
+            "validated_at", "archived_at", "comment",
+        ]
+        stats_df = stats_df[[column for column in visible_columns if column in stats_df.columns]]
+        stats_df = stats_df.rename(columns={
+            "brand": "Brand",
+            "brief_type": "Type of brief",
+            "cycle": "Cycle",
+            "step_number": "Step",
+            "deliverable": "Deliverable",
+            "account": "Account",
+            "start_date": "Start date",
+            "end_date": "End date",
+            "repetition": "Repetition",
+            "validated_by": "Validated by",
+            "validated_at": "Validated at",
+            "archived_at": "Archived at",
+            "comment": "Comment",
+        })
+        st.dataframe(stats_df, use_container_width=True, hide_index=True)
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TAB 4 — PROGRESS & ANALYTICS
 # ═════════════════════════════════════════════════════════════════════════════
 with tab_viz:
 

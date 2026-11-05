@@ -15,5 +15,8 @@ streamlit run app.py
 Jobs are stored in `data/planning.json` and can be seeded/refreshed by importing
 `PLANNING ykone.xlsx` from the sidebar.
 
-Brand timelines and their steps are stored separately in `data/timelines.json`.
-Timeline progress is calculated from the steps marked as validated.
+Brand timelines and archived step stats are stored in `data/timelines.json`.
+Timeline progress is calculated from the steps marked as validated. Once all
+steps are validated, weekly steps remain visible for seven days, then move to
+the Timeline Stats tab and reset for the next cycle. Due cycles are checked
+hourly while the dashboard is open and whenever it is opened.
