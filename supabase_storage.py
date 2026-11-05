@@ -70,6 +70,19 @@ def _request_url(config: StorageConfig, object_path: str) -> str:
     return f"{config.url}/storage/v1/object/{bucket}/{path}"
 
 
+def _http_error_detail(exc: HTTPError) -> str:
+    try:
+        body = json.loads(exc.read(1024).decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return ""
+    if not isinstance(body, dict):
+        return ""
+    detail = body.get("message") or body.get("error_description") or body.get("error")
+    if isinstance(detail, str):
+        return detail[:240]
+    return ""
+
+
 def verify_bucket(config: StorageConfig) -> None:
     bucket = quote(config.bucket, safe="")
     request = Request(
@@ -88,8 +101,10 @@ def verify_bucket(config: StorageConfig) -> None:
             raise RuntimeError(
                 f"Supabase bucket '{config.bucket}' was not found or is not accessible."
             ) from exc
+        detail = _http_error_detail(exc)
+        suffix = f": {detail}" if detail else ""
         raise RuntimeError(
-            f"Supabase Storage connection failed with HTTP {exc.code}."
+            f"Supabase Storage connection failed with HTTP {exc.code}{suffix}."
         ) from exc
     except URLError as exc:
         raise RuntimeError("Could not reach Supabase Storage.") from exc
@@ -110,8 +125,10 @@ def read_document(config: StorageConfig, object_path: str) -> Any | None:
     except HTTPError as exc:
         if exc.code == 404:
             return None
+        detail = _http_error_detail(exc)
+        suffix = f": {detail}" if detail else ""
         raise RuntimeError(
-            f"Supabase Storage read failed with HTTP {exc.code}."
+            f"Supabase Storage read failed with HTTP {exc.code}{suffix}."
         ) from exc
     except URLError as exc:
         raise RuntimeError("Could not reach Supabase Storage.") from exc
@@ -138,8 +155,10 @@ def write_document(config: StorageConfig, object_path: str, payload: Any) -> Non
         with urlopen(request, timeout=15):
             return
     except HTTPError as exc:
+        detail = _http_error_detail(exc)
+        suffix = f": {detail}" if detail else ""
         raise RuntimeError(
-            f"Supabase Storage write failed with HTTP {exc.code}."
+            f"Supabase Storage write failed with HTTP {exc.code}{suffix}."
         ) from exc
     except URLError as exc:
         raise RuntimeError("Could not reach Supabase Storage.") from exc

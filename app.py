@@ -114,7 +114,18 @@ def _fs_writable() -> bool:
         return False
 
 
-FS_WRITABLE = STORAGE_CONFIG is None and _fs_writable()
+FS_WRITABLE = _fs_writable()
+
+
+def _use_local_storage(error: Exception) -> None:
+    global STORAGE_CONFIG
+
+    STORAGE_CONFIG = None
+    st.session_state.supabase_connected = False
+    st.session_state.supabase_connection_error = (
+        f"{error} Using local JSON instead; changes will not sync to Supabase."
+    )
+
 
 # Editable columns (order matters for grid and Excel export).
 EDITABLE_COLS = [
@@ -760,13 +771,20 @@ def import_from_excel(file_obj=None) -> pd.DataFrame:
 
 
 def load_data() -> pd.DataFrame:
+    fallback_to_local = STORAGE_CONFIG is None
     if STORAGE_CONFIG is not None:
-        records = read_document(STORAGE_CONFIG, "planning.json")
-    elif DATA_FILE.exists():
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            records = json.load(f)
+        try:
+            records = read_document(STORAGE_CONFIG, "planning.json")
+        except (RuntimeError, ValueError) as exc:
+            _use_local_storage(exc)
+            fallback_to_local = True
+            records = None
     else:
         records = None
+
+    if records is None and fallback_to_local and DATA_FILE.exists():
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            records = json.load(f)
     if records is None:
         return pd.DataFrame(columns=ALL_COLS)
     if not isinstance(records, list) or any(not isinstance(record, dict) for record in records):
@@ -783,8 +801,11 @@ def load_data() -> pd.DataFrame:
 def save_data(df: pd.DataFrame) -> None:
     if STORAGE_CONFIG is not None:
         records = json.loads(df.to_json(orient="records", force_ascii=False))
-        write_document(STORAGE_CONFIG, "planning.json", records)
-        return
+        try:
+            write_document(STORAGE_CONFIG, "planning.json", records)
+            return
+        except RuntimeError as exc:
+            _use_local_storage(exc)
     if not FS_WRITABLE:
         raise OSError("The local data directory is not writable.")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -792,13 +813,20 @@ def save_data(df: pd.DataFrame) -> None:
 
 
 def load_timelines() -> tuple[list[dict], list[dict]]:
+    fallback_to_local = STORAGE_CONFIG is None
     if STORAGE_CONFIG is not None:
-        records = read_document(STORAGE_CONFIG, "timelines.json")
-    elif TIMELINE_FILE.exists():
-        with open(TIMELINE_FILE, "r", encoding="utf-8") as f:
-            records = json.load(f)
+        try:
+            records = read_document(STORAGE_CONFIG, "timelines.json")
+        except (RuntimeError, ValueError) as exc:
+            _use_local_storage(exc)
+            fallback_to_local = True
+            records = None
     else:
         records = None
+
+    if records is None and fallback_to_local and TIMELINE_FILE.exists():
+        with open(TIMELINE_FILE, "r", encoding="utf-8") as f:
+            records = json.load(f)
     if records is None:
         return [], []
     if isinstance(records, list):
@@ -823,12 +851,15 @@ def load_timelines() -> tuple[list[dict], list[dict]]:
 
 def save_timelines(timelines: list[dict], stats: list[dict]) -> None:
     if STORAGE_CONFIG is not None:
-        write_document(
-            STORAGE_CONFIG,
-            "timelines.json",
-            {"timelines": timelines, "stats": stats},
-        )
-        return
+        try:
+            write_document(
+                STORAGE_CONFIG,
+                "timelines.json",
+                {"timelines": timelines, "stats": stats},
+            )
+            return
+        except RuntimeError as exc:
+            _use_local_storage(exc)
     if not FS_WRITABLE:
         raise OSError("The data directory is not writable.")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -1024,9 +1055,9 @@ try:
 except (OSError, RuntimeError, ValueError) as exc:
     st.session_state.supabase_connected = False
     st.session_state.supabase_connection_error = str(exc)
-    _render_supabase_indicator()
-    st.error(f"Could not load planning data: {exc}")
-    st.stop()
+    st.session_state.df = pd.DataFrame(columns=ALL_COLS)
+    df = st.session_state.df
+    st.error(f"Could not load planning data: {exc}. Showing an empty board instead.")
 
 if "timelines" not in st.session_state:
     try:

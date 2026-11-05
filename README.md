@@ -35,7 +35,9 @@ Streamlit app restricted to authorized users. The bucket must already exist
 and be accessible to that key. The app verifies bucket access when a session
 starts. If settings are invalid or the bucket is unreachable, the dashboard
 stays available in local JSON mode and the status indicator turns red; changes
-in local mode will not sync to Supabase.
+in local mode will not sync to Supabase. If a Storage read or write fails during
+use, the app also switches to local JSON, displays the error, and marks the
+connection as disconnected instead of stopping the dashboard.
 
 The Storage bucket is separate from the Postgres database; this setup stores
 JSON objects in Storage and does not create database tables.
