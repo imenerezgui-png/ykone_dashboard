@@ -18,6 +18,13 @@ import plotly.graph_objects as go
 import streamlit as st
 from st_aggrid import AgGrid, DataReturnMode, GridOptionsBuilder, GridUpdateMode, JsCode
 
+from supabase_storage import (
+    load_storage_config,
+    read_document,
+    verify_bucket,
+    write_document,
+)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Page config  (must be first Streamlit call)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -27,6 +34,59 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+try:
+    STORAGE_CONFIG = load_storage_config()
+except ValueError as exc:
+    STORAGE_CONFIG = None
+    st.session_state.supabase_config_error = str(exc)
+else:
+    st.session_state.supabase_config_error = None
+
+
+def _render_supabase_indicator() -> None:
+    connected = bool(
+        STORAGE_CONFIG is not None
+        and st.session_state.get("supabase_connected", False)
+    )
+    color = "#36b37e" if connected else "#e55353"
+    label = "Connected to Supabase" if connected else "Not connected to Supabase"
+    st.sidebar.markdown(
+        f'<div style="display:flex;align-items:center;gap:8px;'
+        f'font-size:0.78rem;color:#f2f2f2;padding:0.35rem 0;">'
+        f'<span style="display:inline-block;width:9px;height:9px;border-radius:50%;'
+        f'background:{color};box-shadow:0 0 7px {color};"></span>'
+        f'<span>{label}</span></div>',
+        unsafe_allow_html=True,
+    )
+    connection_error = st.session_state.get("supabase_connection_error")
+    if connection_error:
+        st.sidebar.caption(connection_error)
+
+
+if st.session_state.get("supabase_config_error"):
+    _render_supabase_indicator()
+    st.error(f"Invalid Supabase configuration: {st.session_state.supabase_config_error}")
+    st.stop()
+
+if STORAGE_CONFIG is None:
+    st.session_state.supabase_connected = False
+else:
+    last_check = st.session_state.get("supabase_checked_at")
+    check_due = (
+        last_check is None
+        or (datetime.now(timezone.utc) - last_check).total_seconds() >= 60
+    )
+    if check_due:
+        st.session_state.supabase_connected = False
+        st.session_state.supabase_connection_error = None
+        st.session_state.supabase_checked_at = datetime.now(timezone.utc)
+        try:
+            verify_bucket(STORAGE_CONFIG)
+        except RuntimeError as exc:
+            st.session_state.supabase_connection_error = str(exc)
+        else:
+            st.session_state.supabase_connected = True
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Paths & constants
@@ -49,7 +109,7 @@ def _fs_writable() -> bool:
         return False
 
 
-FS_WRITABLE = _fs_writable()
+FS_WRITABLE = STORAGE_CONFIG is None and _fs_writable()
 
 # Editable columns (order matters for grid and Excel export).
 EDITABLE_COLS = [
@@ -694,10 +754,17 @@ def import_from_excel(file_obj=None) -> pd.DataFrame:
 
 
 def load_data() -> pd.DataFrame:
-    if not DATA_FILE.exists():
+    if STORAGE_CONFIG is not None:
+        records = read_document(STORAGE_CONFIG, "planning.json")
+    elif DATA_FILE.exists():
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            records = json.load(f)
+    else:
+        records = None
+    if records is None:
         return pd.DataFrame(columns=ALL_COLS)
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        records = json.load(f)
+    if not isinstance(records, list) or any(not isinstance(record, dict) for record in records):
+        raise ValueError("Planning data must be a JSON list of job objects.")
     if not records:
         return pd.DataFrame(columns=ALL_COLS)
     df = pd.DataFrame(records)
@@ -708,17 +775,26 @@ def load_data() -> pd.DataFrame:
 
 
 def save_data(df: pd.DataFrame) -> None:
-    if not FS_WRITABLE:
+    if STORAGE_CONFIG is not None:
+        records = json.loads(df.to_json(orient="records", force_ascii=False))
+        write_document(STORAGE_CONFIG, "planning.json", records)
         return
+    if not FS_WRITABLE:
+        raise OSError("The local data directory is not writable.")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     df.to_json(DATA_FILE, orient="records", indent=2, force_ascii=False)
 
 
 def load_timelines() -> tuple[list[dict], list[dict]]:
-    if not TIMELINE_FILE.exists():
+    if STORAGE_CONFIG is not None:
+        records = read_document(STORAGE_CONFIG, "timelines.json")
+    elif TIMELINE_FILE.exists():
+        with open(TIMELINE_FILE, "r", encoding="utf-8") as f:
+            records = json.load(f)
+    else:
+        records = None
+    if records is None:
         return [], []
-    with open(TIMELINE_FILE, "r", encoding="utf-8") as f:
-        records = json.load(f)
     if isinstance(records, list):
         timelines, stats = records, []
     elif isinstance(records, dict):
@@ -740,6 +816,13 @@ def load_timelines() -> tuple[list[dict], list[dict]]:
 
 
 def save_timelines(timelines: list[dict], stats: list[dict]) -> None:
+    if STORAGE_CONFIG is not None:
+        write_document(
+            STORAGE_CONFIG,
+            "timelines.json",
+            {"timelines": timelines, "stats": stats},
+        )
+        return
     if not FS_WRITABLE:
         raise OSError("The data directory is not writable.")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -930,7 +1013,14 @@ ETAT_COLOR = _P["ETAT_COLOR"]
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown(STYLE, unsafe_allow_html=True)
 
-df = get_df()
+try:
+    df = get_df()
+except (OSError, RuntimeError, ValueError) as exc:
+    st.session_state.supabase_connected = False
+    st.session_state.supabase_connection_error = str(exc)
+    _render_supabase_indicator()
+    st.error(f"Could not load planning data: {exc}")
+    st.stop()
 
 if "timelines" not in st.session_state:
     try:
@@ -947,7 +1037,7 @@ if "timelines" not in st.session_state:
         st.session_state.timelines = timelines
         st.session_state.timeline_stats = timeline_stats
         st.session_state.timeline_load_error = None
-    except (OSError, ValueError) as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
         st.session_state.timelines = []
         st.session_state.timeline_stats = []
         st.session_state.timeline_load_error = str(exc)
@@ -965,7 +1055,7 @@ def _persist_timelines(
         return
     try:
         save_timelines(records, st.session_state.timeline_stats)
-    except OSError as exc:
+    except (OSError, RuntimeError) as exc:
         st.error(f"Could not save timeline changes: {exc}")
         return
     st.session_state.timelines = records
@@ -987,7 +1077,7 @@ def _run_weekly_timeline_archiver() -> None:
         return
     try:
         save_timelines(active, archived)
-    except OSError as exc:
+    except (OSError, RuntimeError) as exc:
         st.error(f"Could not archive weekly timeline steps: {exc}")
         return
     st.session_state.timelines = active
@@ -1166,8 +1256,12 @@ with st.sidebar:
             st.success("Restored.")
             st.rerun()
 
-    if not FS_WRITABLE:
+    if STORAGE_CONFIG is None and not FS_WRITABLE:
         st.caption("Read-only filesystem — use backups to persist changes.")
+    elif STORAGE_CONFIG is not None:
+        st.caption(f"Storage: Supabase bucket `{STORAGE_CONFIG.bucket}`")
+    else:
+        st.warning("Supabase is not configured; changes are saved to local JSON files.")
 
     st.markdown("---")
     total    = len(df)
@@ -1175,6 +1269,7 @@ with st.sidebar:
     pct_done = round(done / total * 100) if total else 0
     st.markdown(f"**{done}/{total}** jobs completed")
     st.progress(pct_done / 100)
+    _render_supabase_indicator()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # KPI cards
