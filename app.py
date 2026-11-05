@@ -6,6 +6,7 @@ Monochrome typewriter theme (black / white / grey shadows).
 from __future__ import annotations
 
 import calendar
+import copy
 import io
 import json
 import uuid
@@ -33,6 +34,7 @@ st.set_page_config(
 APP_DIR   = Path(__file__).parent
 DATA_DIR  = APP_DIR / "data"
 DATA_FILE = DATA_DIR / "planning.json"
+TIMELINE_FILE = DATA_DIR / "timelines.json"
 LOGO_FILE = APP_DIR / "ykone_logo.jpg"
 
 
@@ -712,6 +714,26 @@ def save_data(df: pd.DataFrame) -> None:
     df.to_json(DATA_FILE, orient="records", indent=2, force_ascii=False)
 
 
+def load_timelines() -> list[dict]:
+    if not TIMELINE_FILE.exists():
+        return []
+    with open(TIMELINE_FILE, "r", encoding="utf-8") as f:
+        records = json.load(f)
+    if not isinstance(records, list) or any(not isinstance(item, dict) for item in records):
+        raise ValueError("Timeline data must be a JSON list of timeline objects.")
+    return records
+
+
+def save_timelines(timelines: list[dict]) -> None:
+    if not FS_WRITABLE:
+        raise OSError("The data directory is not writable.")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    TIMELINE_FILE.write_text(
+        json.dumps(timelines, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 def df_to_json_bytes(df: pd.DataFrame) -> bytes:
     return df.to_json(orient="records", indent=2, force_ascii=False).encode("utf-8")
 
@@ -818,6 +840,35 @@ ETAT_COLOR = _P["ETAT_COLOR"]
 st.markdown(STYLE, unsafe_allow_html=True)
 
 df = get_df()
+
+if "timelines" not in st.session_state:
+    try:
+        st.session_state.timelines = load_timelines()
+        st.session_state.timeline_load_error = None
+    except (OSError, ValueError) as exc:
+        st.session_state.timelines = []
+        st.session_state.timeline_load_error = str(exc)
+st.session_state.setdefault("timeline_load_error", None)
+
+
+def _persist_timelines(
+    records: list[dict],
+    success_message: str,
+    selected_timeline_id: str | None = None,
+) -> None:
+    if st.session_state.get("timeline_load_error"):
+        st.error("Timeline data could not be loaded, so changes are disabled to protect the existing file.")
+        return
+    try:
+        save_timelines(records)
+    except OSError as exc:
+        st.error(f"Could not save timeline changes: {exc}")
+        return
+    st.session_state.timelines = records
+    if selected_timeline_id:
+        st.session_state["timeline_selector"] = selected_timeline_id
+    st.success(success_message)
+    st.rerun()
 
 
 def _row_team_members(row) -> set[str]:
@@ -1058,8 +1109,9 @@ if not show_completed:
 # ─────────────────────────────────────────────────────────────────────────────
 # Tabs
 # ─────────────────────────────────────────────────────────────────────────────
-tab_plan, tab_viz, tab_team = st.tabs([
+tab_plan, tab_timeline, tab_viz, tab_team = st.tabs([
     "  PLANNING BOARD  ",
+    "  TIMELINE  ",
     "  PROGRESS & ANALYTICS  ",
     "  COLLABORATOR ANALYTICS  ",
 ])
@@ -1200,9 +1252,6 @@ with tab_plan:
                     save_data(df)
                     st.success(f"Debrief #{len(existing)} logged.")
                     st.rerun()
-
-    with st.expander("+  Add Timeline", expanded=False):
-        st.caption("Coming soon.")
 
     st.markdown('<div class="section-title">Job Board</div>', unsafe_allow_html=True)
 
@@ -1432,7 +1481,260 @@ with tab_plan:
             st.rerun()
 
 # ═════════════════════════════════════════════════════════════════════════════
-# TAB 2 — PROGRESS & ANALYTICS
+# TAB 2 — TIMELINE
+# ═════════════════════════════════════════════════════════════════════════════
+with tab_timeline:
+    st.markdown('<div class="section-title">Brand Timeline</div>', unsafe_allow_html=True)
+    if st.session_state.get("timeline_load_error"):
+        st.error(
+            "Could not read data/timelines.json. Timeline editing is disabled to "
+            f"protect the existing data. Details: {st.session_state.timeline_load_error}"
+        )
+
+    with st.expander("+  Create Timeline", expanded=not st.session_state.timelines):
+        with st.form("create_timeline_form", clear_on_submit=True):
+            create_brand = st.text_input("Brand *")
+            create_brief = st.text_input("Type of brief *")
+            create_timeline = st.form_submit_button(
+                "+  Create Timeline", type="primary", use_container_width=True
+            )
+        if create_timeline:
+            if not create_brand.strip() or not create_brief.strip():
+                st.error("Brand and type of brief are required.")
+            else:
+                new_timeline = {
+                    "id": str(uuid.uuid4()),
+                    "brand": create_brand.strip(),
+                    "brief_type": create_brief.strip(),
+                    "steps": [{
+                        "id": str(uuid.uuid4()),
+                        "deliverable": "",
+                        "account": "",
+                        "start_date": None,
+                        "end_date": None,
+                        "repetition": "Aucune",
+                        "status": "À venir",
+                        "validated": False,
+                        "validated_by": "",
+                        "comment": "",
+                    }],
+                }
+                _persist_timelines(
+                    [*st.session_state.timelines, new_timeline],
+                    f"Timeline for {create_brand.strip()} created with Step 1.",
+                    selected_timeline_id=new_timeline["id"],
+                )
+
+    if st.session_state.timelines:
+        timelines = st.session_state.timelines
+        timeline_ids = [item["id"] for item in timelines]
+        selected_timeline_id = st.selectbox(
+            "Select a timeline",
+            timeline_ids,
+            format_func=lambda timeline_id: next(
+                f'{item["brand"]} — {item["brief_type"]} ({len(item["steps"])} steps)'
+                for item in timelines if item["id"] == timeline_id
+            ),
+            key="timeline_selector",
+        )
+        selected_timeline = next(
+            item for item in timelines if item["id"] == selected_timeline_id
+        )
+        steps = selected_timeline.get("steps", [])
+        if not isinstance(steps, list):
+            st.error("This timeline has invalid step data; it cannot be edited.")
+        else:
+            validated_count = sum(bool(step.get("validated")) for step in steps)
+            progress = validated_count / len(steps) if steps else 0
+            st.markdown(
+                f"**{selected_timeline['brand']}**  ·  "
+                f"{selected_timeline['brief_type']}"
+            )
+            st.progress(
+                progress,
+                text=f"{validated_count}/{len(steps)} steps validated · {round(progress * 100)}%",
+            )
+
+            account_names = set(ACCOUNTING_NAMES)
+            for value in df["ACCOUNTS"].dropna().astype(str):
+                account_names.update(
+                    name.strip()
+                    for name in value.replace(",", "/").split("/")
+                    if name.strip() and name.strip().lower() not in ("nan", "none")
+                )
+            account_options = [""] + sorted(account_names, key=str.casefold)
+
+            validator_names = set(ALL_COLLABORATORS)
+            for _, row in df.iterrows():
+                for column in ("TEAM CREA 1", "TEAM CREA 2", "CM", "ACCOUNTS"):
+                    value = row.get(column)
+                    if value:
+                        validator_names.update(
+                            name.strip()
+                            for name in str(value).replace(",", "/").split("/")
+                            if name.strip() and name.strip().lower() not in ("nan", "none")
+                        )
+
+            status_options = ["À venir", "En cours", "En retard", "Terminé"]
+            repetition_options = ["Aucune", "Quotidienne", "Hebdomadaire", "Mensuelle", "Autre"]
+
+            def _date_value(value):
+                if not value:
+                    return None
+                try:
+                    return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+                except ValueError:
+                    return None
+
+            for start in range(0, len(steps), 4):
+                step_columns = st.columns(min(4, len(steps) - start))
+                for offset, step in enumerate(steps[start:start + 4]):
+                    step_number = start + offset + 1
+                    step_id = step["id"]
+                    with step_columns[offset]:
+                        with st.container(border=True):
+                            st.markdown(f"#### STEP {step_number}")
+                            st.caption(
+                                "VALIDATED" if step.get("validated") else step.get("status", "À venir")
+                            )
+                            with st.form(f"timeline_step_form_{step_id}"):
+                                deliverable = st.text_area(
+                                    "Deliverable",
+                                    value=step.get("deliverable", ""),
+                                    key=f"timeline_deliverable_{step_id}",
+                                    height=72,
+                                )
+                                current_account = step.get("account", "")
+                                available_accounts = list(account_options)
+                                if current_account and current_account not in available_accounts:
+                                    available_accounts.append(current_account)
+                                account = st.selectbox(
+                                    "Account",
+                                    available_accounts,
+                                    index=available_accounts.index(current_account)
+                                    if current_account in available_accounts else 0,
+                                    key=f"timeline_account_{step_id}",
+                                )
+                                start_date, end_date = st.columns(2)
+                                with start_date:
+                                    start_value = st.date_input(
+                                        "Start date",
+                                        value=_date_value(step.get("start_date")),
+                                        key=f"timeline_start_{step_id}",
+                                    )
+                                with end_date:
+                                    end_value = st.date_input(
+                                        "End date",
+                                        value=_date_value(step.get("end_date")),
+                                        key=f"timeline_end_{step_id}",
+                                    )
+
+                                current_repetition = step.get("repetition", "Aucune")
+                                repetitions = list(repetition_options)
+                                if current_repetition not in repetitions:
+                                    repetitions.append(current_repetition)
+                                repetition = st.selectbox(
+                                    "Repetition",
+                                    repetitions,
+                                    index=repetitions.index(current_repetition),
+                                    key=f"timeline_repetition_{step_id}",
+                                )
+                                current_status = step.get("status", "À venir")
+                                statuses = list(status_options)
+                                if current_status not in statuses:
+                                    statuses.append(current_status)
+                                status = st.selectbox(
+                                    "Status",
+                                    statuses,
+                                    index=statuses.index(current_status),
+                                    key=f"timeline_status_{step_id}",
+                                )
+                                validated = st.checkbox(
+                                    "Step validated",
+                                    value=bool(step.get("validated", False)),
+                                    key=f"timeline_validated_{step_id}",
+                                )
+                                current_validator = step.get("validated_by", "")
+                                validators = [""] + sorted(
+                                    validator_names | ({current_validator} if current_validator else set()),
+                                    key=str.casefold,
+                                )
+                                validated_by = st.selectbox(
+                                    "Validated by",
+                                    validators,
+                                    index=validators.index(current_validator)
+                                    if current_validator in validators else 0,
+                                    key=f"timeline_validator_{step_id}",
+                                )
+                                comment = st.text_area(
+                                    "Comment",
+                                    value=step.get("comment", ""),
+                                    key=f"timeline_comment_{step_id}",
+                                    height=72,
+                                )
+                                save_step = st.form_submit_button(
+                                    "Save step", type="primary", use_container_width=True
+                                )
+
+                            if save_step:
+                                is_validated = validated or status == "Terminé"
+                                if is_validated and not validated_by:
+                                    st.error("Choose who validated this step before marking it complete.")
+                                elif end_value and start_value and end_value < start_value:
+                                    st.error("End date cannot be before start date.")
+                                else:
+                                    updated_timelines = copy.deepcopy(timelines)
+                                    target_timeline = next(
+                                        item for item in updated_timelines
+                                        if item["id"] == selected_timeline_id
+                                    )
+                                    target_step = next(
+                                        item for item in target_timeline["steps"]
+                                        if item["id"] == step_id
+                                    )
+                                    target_step.update({
+                                        "deliverable": deliverable.strip(),
+                                        "account": account,
+                                        "start_date": start_value.isoformat() if start_value else None,
+                                        "end_date": end_value.isoformat() if end_value else None,
+                                        "repetition": repetition,
+                                        "status": "Terminé" if is_validated else status,
+                                        "validated": is_validated,
+                                        "validated_by": validated_by if is_validated else "",
+                                        "comment": comment.strip(),
+                                    })
+                                    _persist_timelines(
+                                        updated_timelines,
+                                        f"Step {step_number} saved.",
+                                    )
+
+            if st.button("+  Add Step", type="primary", key=f"add_timeline_step_{selected_timeline_id}"):
+                updated_timelines = copy.deepcopy(timelines)
+                target_timeline = next(
+                    item for item in updated_timelines
+                    if item["id"] == selected_timeline_id
+                )
+                target_timeline["steps"].append({
+                    "id": str(uuid.uuid4()),
+                    "deliverable": "",
+                    "account": "",
+                    "start_date": None,
+                    "end_date": None,
+                    "repetition": "Aucune",
+                    "status": "À venir",
+                    "validated": False,
+                    "validated_by": "",
+                    "comment": "",
+                })
+                _persist_timelines(
+                    updated_timelines,
+                    f"Step {len(target_timeline['steps'])} added.",
+                )
+    else:
+        st.info("Create a timeline to start adding steps.")
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TAB 3 — PROGRESS & ANALYTICS
 # ═════════════════════════════════════════════════════════════════════════════
 with tab_viz:
 

@@ -14,3 +14,6 @@ streamlit run app.py
 
 Jobs are stored in `data/planning.json` and can be seeded/refreshed by importing
 `PLANNING ykone.xlsx` from the sidebar.
+
+Brand timelines and their steps are stored separately in `data/timelines.json`.
+Timeline progress is calculated from the steps marked as validated.
