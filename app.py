@@ -665,7 +665,8 @@ label p {{
 .cal-legend .cal-chip {{ font-size: 0.66rem; color: {DIM}; }}
 
 /* ── hide Streamlit chrome ───────────────────────────────────────── */
-#MainMenu, footer, header {{ visibility: hidden; }}
+#MainMenu, footer {{ visibility: hidden; }}
+header {{ visibility: visible; }}
 </style>
 """
 
