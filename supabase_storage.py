@@ -45,15 +45,21 @@ def load_storage_config() -> StorageConfig | None:
         )
 
     parsed_url = urlparse(values["url"])
-    if (
-        parsed_url.scheme != "https"
-        or not parsed_url.hostname
-        or parsed_url.path not in ("", "/")
-        or parsed_url.hostname.endswith(".storage.supabase.co")
-    ):
+    if parsed_url.scheme != "https" or not parsed_url.hostname:
         raise ValueError(
-            "Supabase Storage URL must be the project API URL, "
-            "for example https://<project-ref>.supabase.co, not the S3 endpoint."
+            "Supabase Storage URL must use HTTPS and include a valid project host."
+        )
+    if parsed_url.hostname.endswith(".storage.supabase.co"):
+        project_ref = parsed_url.hostname.removesuffix(".storage.supabase.co")
+        if not project_ref or parsed_url.path not in ("", "/", "/storage/v1/s3"):
+            raise ValueError("The Supabase S3 endpoint URL is not in a recognized format.")
+        values["url"] = f"https://{project_ref}.supabase.co"
+    elif parsed_url.hostname.endswith(".supabase.co") and parsed_url.path in ("", "/"):
+        values["url"] = f"https://{parsed_url.hostname}"
+    else:
+        raise ValueError(
+            "Supabase Storage URL must be the project API URL "
+            "or its Supabase S3 endpoint."
         )
     return StorageConfig(**values)
 

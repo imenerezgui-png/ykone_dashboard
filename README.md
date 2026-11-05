@@ -27,12 +27,15 @@ service_key = "<server-side Supabase service key>"
 bucket = "ykone_dashboard"
 ```
 
-Use the project API URL (`https://<project-ref>.supabase.co`), not the S3
-endpoint (`*.storage.supabase.co/storage/v1/s3`). The service key is privileged
-and must never be committed or shared. Keep the Streamlit app restricted to
-authorized users. The bucket must already exist and be accessible to that key.
-The app verifies bucket access when a session starts and shows a clear error if
-the configuration is invalid.
+Use either the project API URL (`https://<project-ref>.supabase.co`) or the S3
+endpoint (`https://<project-ref>.storage.supabase.co/storage/v1/s3`). The app
+normalizes the S3 hostname to the project API host for Storage REST requests.
+The service key is privileged and must never be committed or shared. Keep the
+Streamlit app restricted to authorized users. The bucket must already exist
+and be accessible to that key. The app verifies bucket access when a session
+starts. If settings are invalid or the bucket is unreachable, the dashboard
+stays available in local JSON mode and the status indicator turns red; changes
+in local mode will not sync to Supabase.
 
 The Storage bucket is separate from the Postgres database; this setup stores
 JSON objects in Storage and does not create database tables.

@@ -59,18 +59,20 @@ def _render_supabase_indicator() -> None:
         f'<span>{label}</span></div>',
         unsafe_allow_html=True,
     )
-    connection_error = st.session_state.get("supabase_connection_error")
+    connection_error = (
+        st.session_state.get("supabase_config_error")
+        or st.session_state.get("supabase_connection_error")
+    )
     if connection_error:
         st.sidebar.caption(connection_error)
 
 
-if st.session_state.get("supabase_config_error"):
-    _render_supabase_indicator()
-    st.error(f"Invalid Supabase configuration: {st.session_state.supabase_config_error}")
-    st.stop()
-
 if STORAGE_CONFIG is None:
     st.session_state.supabase_connected = False
+    st.session_state.supabase_connection_error = (
+        st.session_state.get("supabase_config_error")
+        or "Using local JSON files; Supabase is not configured."
+    )
 else:
     last_check = st.session_state.get("supabase_checked_at")
     check_due = (
@@ -85,8 +87,11 @@ else:
             verify_bucket(STORAGE_CONFIG)
         except RuntimeError as exc:
             st.session_state.supabase_connection_error = str(exc)
+            STORAGE_CONFIG = None
         else:
             st.session_state.supabase_connected = True
+    elif not st.session_state.get("supabase_connected", False):
+        STORAGE_CONFIG = None
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Paths & constants
@@ -1261,7 +1266,10 @@ with st.sidebar:
     elif STORAGE_CONFIG is not None:
         st.caption(f"Storage: Supabase bucket `{STORAGE_CONFIG.bucket}`")
     else:
-        st.warning("Supabase is not configured; changes are saved to local JSON files.")
+        st.warning(
+            "Supabase is unavailable or misconfigured. This session uses local JSON; "
+            "changes will not sync to Supabase."
+        )
 
     st.markdown("---")
     total    = len(df)
